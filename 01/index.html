@@ -16,8 +16,8 @@
         <script> 冒頭の PORTAL 定数にまとめてあります
      ========================================================== */
   :root{
-    --cave-img: url("assets/cave.png");
-    --sky-img:  url("assets/sky.jpg");
+    --cave-img: url("assets/cave.webp");      /* PC: 2400×1340 WebP（スマホは下の @media で -sm 版に切替） */
+    --sky-img:  url("assets/sky.webp");
     --hole-x: 47.7%;
     --hole-y: 46.2%;
     --ink: #f3ecff;
@@ -126,6 +126,11 @@
 
   /* ---------- スマホ（768px以下） ---------- */
   @media (max-width:768px){
+    /* 表示速度対策：スマホは半分の解像度（1200×670）の WebP を読み込む */
+    :root{
+      --cave-img: url("assets/cave-sm.webp");
+      --sky-img:  url("assets/sky-sm.webp");
+    }
     .nav{padding:16px 5vw; font-size:.6rem; letter-spacing:.08em; gap:10px}
     /* 穴が画面中央に来るので、テキストは下寄せにして穴と重ねない */
     .hero{
