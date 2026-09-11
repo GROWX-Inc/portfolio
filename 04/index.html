@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<!-- ★クリニック名はここを差し替える -->
+<title>LUMIÈRE Beauty Clinic</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  /* ==========================================================
+     調整ポイント（数値を変えるだけで見た目を変えられます）
+     --card-h   : カードの高さ（画面高さに対する割合）。幅は 4:5 で自動
+     --card-gap : カード同士の隙間（カード幅に対する割合）
+     湾曲の強さ（円筒の半径R・視点距離）と減速の強さは <script> 冒頭の CFG にあります
+     画像の差し替え：<script> 冒頭の IMAGES（★印）のURLを書き換えるだけです
+     ========================================================== */
+  :root{
+    --black:#111;
+    --gray:#8a8a8a;
+    --gray-soft:#a3a3a3;
+    --card-h: min(42vh, 50vw * 1.25);        /* 画面高さの42%。横幅が足りない端末では幅基準で縮小 */
+    --card-w: calc(var(--card-h) * 0.8);     /* 縦横比 4:5 */
+    --card-gap: calc(var(--card-w) * 0.06);  /* 隙間 = カード幅の6% */
+  }
+
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html, body{ overflow-x:hidden; }
+  html{ background:#fff; -webkit-text-size-adjust:100%; }
+  body{
+    font-family:"Inter", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    color:var(--black);
+    background:#fff;
+    min-height:100svh;
+    display:flex;
+    flex-direction:column;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* 初回表示：見出し→サブコピー→カルーセル→フッターの順に時差フェードイン */
+  .fade{
+    opacity:0;
+    transform:translateY(12px);
+    transition:opacity .7s ease, transform .7s cubic-bezier(.2,.7,.2,1);
+    transition-delay:var(--d, 0s);
+  }
+  body.is-ready .fade{ opacity:1; transform:none; }
+
+  /* ---------- Header ---------- */
+  .nav{
+    display:grid;
+    grid-template-columns:1fr auto 1fr;
+    align-items:center;
+    padding:clamp(14px, 2vw, 18px) clamp(18px, 3vw, 40px);
+  }
+  .nav__back{
+    justify-self:start;
+    width:44px; height:44px; border-radius:50%;
+    background:var(--black); color:#fff; border:0; cursor:pointer;
+    display:grid; place-items:center;
+  }
+  .nav__back svg{ width:18px; height:18px; display:block; }
+  .nav__menu{
+    justify-self:center;
+    width:44px; height:44px; border:0; background:transparent; cursor:pointer;
+    display:flex; flex-direction:column; justify-content:center; align-items:center; gap:5px;
+  }
+  .nav__menu span{ display:block; width:22px; height:1.5px; background:var(--black); }
+  .nav__cta{
+    justify-self:end;
+    background:var(--black); color:#fff; text-decoration:none;
+    font-size:14px; font-weight:500; letter-spacing:-0.01em;
+    padding:13px 20px; border-radius:999px; white-space:nowrap;
+  }
+
+  /* ---------- Hero copy ---------- */
+  .hero{
+    text-align:center;
+    padding:clamp(8px, 2vh, 28px) 20px 0;
+  }
+  .hero h1{
+    font-size:clamp(38px, 5.6vw, 76px);
+    font-weight:700;
+    letter-spacing:-0.04em;
+    line-height:0.98;
+  }
+  .hero h1 span{ display:block; white-space:nowrap; }
+  .hero .sub{
+    margin-top:clamp(12px, 1.8vh, 18px);
+    font-size:clamp(14px, 1.15vw, 16px);
+    color:var(--gray);
+    font-weight:400;
+  }
+
+  /* ---------- Curved carousel ---------- */
+  .carousel{
+    position:relative;
+    flex:1 1 auto;
+    min-height:calc(var(--card-h) + 2vh);
+    overflow:hidden;                  /* 古いブラウザ向け */
+    overflow-x:clip; overflow-y:visible;  /* 横だけ切り、遠近で背が伸びた端のカードは縦にはみ出てもOK */
+    perspective:1150px;                   /* 実際の値は JS が CFG.perspective から画面幅に合わせて上書き */
+    perspective-origin:50% 50%;
+    cursor:grab;
+    touch-action:pan-y;           /* 横スワイプはカルーセル、縦スワイプはページのスクロールへ */
+    user-select:none;
+    -webkit-user-select:none;
+  }
+  .carousel.is-dragging{ cursor:grabbing; }
+  .track{
+    position:absolute; inset:0;
+    transform-style:preserve-3d;
+  }
+  .card{
+    position:absolute;
+    left:50%; top:50%;
+    width:var(--card-w);
+    height:var(--card-h);            /* 全カード同じ幅・同じ高さ */
+    border-radius:6px;
+    overflow:hidden;
+    background:#e9e9e9;
+    will-change:transform;
+    backface-visibility:hidden;
+    -webkit-backface-visibility:hidden;
+    visibility:hidden;
+  }
+  .card__img{
+    position:absolute; inset:0;
+    width:100%; height:100%;
+    object-fit:cover;            /* 縦横比が違う写真でも切り抜いて収める */
+    display:block;
+    pointer-events:none;
+    -webkit-user-drag:none;
+  }
+
+  /* ---------- Footer copy ---------- */
+  .outro{
+    text-align:center;
+    padding:clamp(8px, 1.6vh, 14px) 20px clamp(20px, 3vh, 24px);
+  }
+  .outro p{
+    max-width:520px; margin:0 auto;
+    font-size:clamp(14px, 1.15vw, 16px);
+    line-height:1.6;
+    color:var(--gray);
+  }
+  .outro nav{
+    margin-top:clamp(12px, 2vh, 20px);
+    display:flex; justify-content:center; gap:clamp(24px, 3vw, 40px);
+  }
+  .outro nav a{
+    color:var(--black); text-decoration:underline; text-underline-offset:5px; text-decoration-thickness:1px;
+    font-size:14px; font-weight:500;
+  }
+
+  @media (max-width:600px){
+    :root{ --card-h: min(38vh, 60vw * 1.25); }   /* スマホ：画面幅に合わせて縮小 */
+  }
+  @media (max-width:640px){
+    .nav__cta{ padding:11px 16px; }
+    .nav__back{ width:40px; height:40px; }
+  }
+  @media (prefers-reduced-motion:reduce){
+    body, .hero{ transition:none; }
+  }
+</style>
+</head>
+<body>
+
+  <header class="nav">
+    <button class="nav__back" type="button" aria-label="Back">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/>
+      </svg>
+    </button>
+    <button class="nav__menu" type="button" aria-label="Menu">
+      <span></span><span></span><span></span>
+    </button>
+    <a class="nav__cta" href="#">Book a consultation</a>
+  </header>
+
+  <section class="hero">
+    <!-- ★クリニック名はここを差し替える（1つの<span>が1行。単語の途中では折り返さない） -->
+    <h1 class="fade" style="--d:0s"><span>LUMIÈRE</span><span>Beauty</span><span>Clinic</span></h1>
+    <p class="sub fade" style="--d:.15s">The beauty you deserve has never been designed before.</p>
+  </section>
+
+  <section class="carousel fade" style="--d:.3s" aria-label="Selected projects">
+    <div class="track"><!-- カードは IMAGES 配列から自動生成されます --></div>
+  </section>
+
+  <footer class="outro fade" style="--d:.45s">
+    <p>We design personalized treatment plans from a blank page. No templates, no one-size-fits-all menus, no shortcuts.</p>
+    <nav>
+      <a href="#">Book a consultation</a>
+      <a href="#">See Treatments</a>
+    </nav>
+  </footer>
+
+<script>
+(function(){
+  /* ---------- カーブと動きの設定 ---------- */
+  var CFG = {
+    R           : 1150, // 円筒の半径(px)。画面幅1440pxのときの値で、画面幅に比例して自動調整。
+                        // 小さいほど急カーブ（端のカードが強く手前に迫る）、大きいほど平ら
+    perspective : 1150, // 視点までの距離(px)。同じく画面幅に比例。R と同じ値にすると
+                        // 「円筒の中心から見ている」状態。R より小さくすると遠近が強まる
+    friction    : 0.95  // 慣性の減速率（1に近いほど長く滑る）
+  };
+
+  /* ★画像はここを差し替える（URLを書き換えるだけで全カードが入れ替わる） */
+  var IMAGES = [
+    'assets/images/00001_image.png',
+    'assets/images/00002_image.png',
+    'assets/images/00003_image.png',
+    'assets/images/00004_image.png',
+    'assets/images/00005_image.png',
+    'assets/images/00006_image.png',
+    'assets/images/00007_image.png',
+    'assets/images/00008_image.png',
+    'assets/images/00009_image.png'
+  ];
+
+  var viewport = document.querySelector('.carousel');
+  var track    = viewport.querySelector('.track');
+
+  /* IMAGES からカードを生成し、さらに同じ列をもう1周ぶん複製して無限ループにする */
+  function makeCard(src){
+    var fig = document.createElement('figure');
+    fig.className = 'card';
+    var img = document.createElement('img');
+    img.className = 'card__img';
+    img.src = src;
+    img.alt = '';
+    img.draggable = false;
+    img.decoding = 'async';
+    fig.appendChild(img);
+    return fig;
+  }
+  track.innerHTML = '';
+  IMAGES.concat(IMAGES).forEach(function(src){ track.appendChild(makeCard(src)); });
+  var cards = Array.prototype.slice.call(track.children);
+  var count = cards.length;
+
+  var step = 0, loop = 0, R = 1150, P = 1150, vw = 0, cardW = 0;
+  var x = 0, vx = 0;
+  var dragging = false, lastX = 0, lastT = 0, moved = 0;
+
+  function measure(){
+    var r   = cards[0].getBoundingClientRect();
+    var gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-gap')) || 16;
+    /* getBoundingClientRect は変形後の幅を返すので offsetWidth を使う */
+    cardW  = cards[0].offsetWidth;
+    step   = cardW + gap;
+    loop   = step * count;
+    vw     = viewport.clientWidth;
+    var k  = Math.max(vw, 900) / 1440;                   /* 画面幅に比例（狭い画面では急になりすぎないよう下限あり） */
+    R      = CFG.R * k;
+    P      = CFG.perspective * k;
+    viewport.style.perspective = P.toFixed(0) + 'px';
+    void r;
+  }
+
+  /* 円筒スクリーン方式：
+     垂直な円筒（半径R）の内側にカードを貼り、円筒の中心（視点）から正面を見た状態。
+     カードは常に垂直・水平のまま。中央からの距離 d に応じて
+       角度 θ = d / R
+       位置   = (R·sinθ, 0, R·(1-cosθ))  … 端ほど手前（視点側）へ
+       向き   = rotateY(-θ)               … 外側の辺が視聴者側に迫る
+     を毎フレーム計算する。見た目の大小差は perspective の遠近感だけで生じる */
+  function render(){
+    var half = loop / 2;
+    for (var i = 0; i < count; i++){
+      var d = (i * step + x) % loop;
+      if (d < 0) d += loop;
+      if (d > half) d -= loop;               /* d = 画面中央からの水平距離 (-loop/2 〜 loop/2) */
+
+      var card  = cards[i];
+      var theta = d / R;
+      var tz    = R * (1 - Math.cos(theta));
+      var depth = P - tz;                     /* 視点からカード中心までの奥行き */
+      if (Math.abs(theta) > 1.3 || depth < P * 0.2){
+        card.style.visibility = 'hidden';     /* 視点の真横〜背後に回ったカードは描画しない */
+        continue;
+      }
+      var tx  = R * Math.sin(theta);
+      var sx  = tx * P / depth;               /* 画面上での見かけの位置 */
+      if (Math.abs(sx) > vw / 2 + cardW * P / depth){
+        card.style.visibility = 'hidden';     /* 画面外のカードは描画しない */
+        continue;
+      }
+      card.style.visibility = 'visible';
+      card.style.transform =
+        'translate(-50%,-50%) translate3d(' + tx.toFixed(2) + 'px,0,' + tz.toFixed(2) + 'px) ' +
+        'rotateY(' + (-theta).toFixed(4) + 'rad)';
+    }
+  }
+
+  var prevFrame = 0;
+  function frame(now){
+    /* 慣性は経過時間基準（60Hz/120Hzのどちらでも同じ滑り方になる） */
+    var dt = prevFrame ? Math.min(3, (now - prevFrame) / 16.67) : 1;
+    prevFrame = now;
+    if (!dragging && vx !== 0){
+      x  += vx * dt;
+      vx *= Math.pow(CFG.friction, dt);
+      if (Math.abs(vx) < 0.05) vx = 0;
+    }
+    render();
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------- ドラッグ／スワイプ（Pointer Events） ---------- */
+  viewport.addEventListener('pointerdown', function(e){
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    dragging = true; moved = 0; vx = 0;
+    lastX = e.clientX; lastT = performance.now();
+    viewport.classList.add('is-dragging');
+    try { viewport.setPointerCapture(e.pointerId); } catch(_){}
+  });
+  viewport.addEventListener('pointermove', function(e){
+    if (!dragging) return;
+    var now = performance.now();
+    var dx  = e.clientX - lastX;
+    var dt  = Math.max(1, now - lastT);
+    x += dx; moved += Math.abs(dx);
+    /* 速度は直近の動きを重めに平均（1フレーム=16ms換算） */
+    vx = vx * 0.6 + (dx / dt * 16) * 0.4;
+    lastX = e.clientX; lastT = now;
+  });
+  function release(e){
+    if (!dragging) return;
+    dragging = false;
+    viewport.classList.remove('is-dragging');
+    /* 指を止めてから離した場合は慣性なし */
+    if (performance.now() - lastT > 80) vx = 0;
+    try { viewport.releasePointerCapture(e.pointerId); } catch(_){}
+  }
+  viewport.addEventListener('pointerup', release);
+  viewport.addEventListener('pointercancel', release);
+  viewport.addEventListener('lostpointercapture', function(){ dragging = false; viewport.classList.remove('is-dragging'); });
+  viewport.addEventListener('dragstart', function(e){ e.preventDefault(); });
+
+  /* ---------- 初期化 ---------- */
+  if ('ResizeObserver' in window){
+    new ResizeObserver(function(){ measure(); render(); }).observe(viewport);
+  } else {
+    window.addEventListener('resize', function(){ measure(); render(); });
+  }
+  measure();
+  render();
+  requestAnimationFrame(frame);
+  /* 現在のスクロール量を外から読めるようにしておく（デバッグ用・動作には影響なし） */
+  Object.defineProperty(viewport, 'offsetX3D', { get: function(){ return x; } });
+
+  /* ページ全体をふわっと表示（フォント読込を少し待つ。長引く場合は待たずに表示） */
+  var shown = false;
+  function reveal(){ if (shown) return; shown = true; document.body.classList.add('is-ready'); measure(); render(); }
+  if (document.fonts && document.fonts.ready){ document.fonts.ready.then(reveal); }
+  setTimeout(reveal, 900);
+})();
+</script>
+</body>
+</html>
