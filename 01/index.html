@@ -11,6 +11,9 @@
      1. --cave-img : 穴の部分が透明なPNG（洞窟の縁）
      2. --sky-img  : 穴の奥に見える雲の画像 or 動画
      3. --hole-x / --hole-y : PNGの穴の中心位置（%）＝ズームの中心
+        ※ JS の setOrigin() がこの値を読み取って transform-origin を計算します
+     ※ ズームの長さ・最大拡大率・追従の滑らかさ・テキストが消えるタイミングは
+        <script> 冒頭の PORTAL 定数にまとめてあります
      ========================================================== */
   :root{
     --cave-img: url("assets/cave.png");
@@ -50,12 +53,15 @@
     background-image:var(--cave-img);
     background-size:cover; background-position:center;
     transform-origin:var(--hole-x) var(--hole-y);
-    will-change:transform;
+    will-change:transform,opacity;
   }
 
-  /* ヒーローテキスト：最初に消える */
+  /* ヒーローテキスト：最初に消える
+     ※ 縦センタリング（-50%）は CSS ではなく JS 側で gsap.set(yPercent:-50) している。
+        CSS で transform:translateY(-50%) を書くと、GSAP が y:-40 を当てるときに
+        それを px に読み替えて「下に落ちる」動きになってしまうため。 */
   .hero{
-    position:absolute; left:6vw; top:50%; transform:translateY(-50%);
+    position:absolute; left:6vw; top:50%;
     max-width:34vw; will-change:transform,opacity;
   }
   .hero h1{
@@ -118,8 +124,23 @@
 
   .spacer{height:60vh; display:grid; place-items:center; opacity:.5}
 
+  /* ---------- スマホ（768px以下） ---------- */
+  @media (max-width:768px){
+    .nav{padding:16px 5vw; font-size:.6rem; letter-spacing:.08em; gap:10px}
+    /* 穴が画面中央に来るので、テキストは下寄せにして穴と重ねない */
+    .hero{
+      left:6vw; right:6vw; max-width:none;
+      top:auto; bottom:10vh;   /* JS 側で yPercent:0 にしている */
+    }
+    .hero h1{font-size:clamp(40px,13vw,64px)}
+    .hero p{font-size:1rem; max-width:32ch}
+    .journeys header{padding:0 6vw}
+    .journeys header p{font-size:.95rem}
+    .track{top:40vh}
+  }
+
   @media (prefers-reduced-motion: reduce){
-    .cave{transform:scale(1)!important}
+    .cave{transform:scale(1)!important; opacity:1!important}
   }
 </style>
 </head>
@@ -160,39 +181,96 @@
 <script>
 gsap.registerPlugin(ScrollTrigger);
 
+/* ==========================================================
+   調整用パラメータ（ポータルズームはここだけ変えればOK）
+   ========================================================== */
+const PORTAL = {
+  zoomLength:       "+=250%",   // ズームの長さ（スクロール量）。増やすとゆっくりになる
+  maxScale:         9,          // 最大拡大率（.cave の最終 scale）
+  scrub:            0.8,        // 追従の滑らかさ。大きいほど指の動きに遅れて滑らかに追従
+  textFadeDuration: 0.18,       // ヒーローテキストが消えるタイミング（タイムライン全体=1 に対する割合）
+  navFadeDuration:  0.15,       // ナビが消えるタイミング（同上）
+  fadeStartScale:   6,          // .cave の scale がこの値を超えたら opacity 1→0 のフェードを開始
+  zoomEase:         "power2.in",// ズームのイージング（fadeStartScale の位置計算にも使う）
+  imgWidth:         2400,       // cave.png の実寸（cover の切り取り計算に使う）
+  imgHeight:        1340
+};
+
+/* スマホでアドレスバーの伸縮による高さ変化のたびに ScrollTrigger が
+   全体を再計算してガタつくのを防ぐ（幅が変わったときは通常通り再計算） */
+ScrollTrigger.config({ ignoreMobileResize:true });
+
 /* ---------- 0. ズームの基点を「画像の穴の中心」に合わせる ----------
    background-size:cover で画像が切り取られるので、
-   画面サイズごとに穴の中心が画面のどこに来るかを計算して transform-origin に入れる。 */
-const IMG_RATIO = 2400/1340;          // cave.png の 横/縦
-const HOLE = { x:0.477, y:0.462 };    // cave.png 内の穴の中心（0〜1）
+   画面サイズごとに穴の中心が画面のどこに来るかを計算して transform-origin に入れる。
+   穴の位置は :root の --hole-x / --hole-y から読む（定義は CSS の1か所だけ）。 */
+const IMG_RATIO = PORTAL.imgWidth / PORTAL.imgHeight;   // cave.png の 横/縦
+const portalEl  = document.querySelector("#portal");
+const caveEl    = document.querySelector(".cave");
+function readHole(){
+  const cs = getComputedStyle(document.documentElement);
+  return {
+    x: parseFloat(cs.getPropertyValue("--hole-x")) / 100,
+    y: parseFloat(cs.getPropertyValue("--hole-y")) / 100
+  };
+}
 function setOrigin(){
-  const vw=window.innerWidth, vh=window.innerHeight;
+  // window.innerWidth/innerHeight ではなくセクション自身の実サイズを使う
+  // （スクロールバー幅やスマホのアドレスバー分のズレを防ぐ）
+  const vw = portalEl.clientWidth, vh = portalEl.clientHeight;
+  if (!vw || !vh) return;   // 非表示タブなどで 0 のときは計算しない
+  const HOLE = readHole();
   let w,h; if (vw/vh > IMG_RATIO){ w=vw; h=vw/IMG_RATIO; } else { h=vh; w=vh*IMG_RATIO; }
   const ox=(vw-w)/2 + w*HOLE.x, oy=(vh-h)/2 + h*HOLE.y;
-  document.querySelector(".cave").style.transformOrigin = `${ox}px ${oy}px`;
+  caveEl.style.transformOrigin = `${ox}px ${oy}px`;
 }
-setOrigin(); window.addEventListener("resize", setOrigin);
+setOrigin();
+window.addEventListener("resize", setOrigin);
+ScrollTrigger.addEventListener("refresh", setOrigin);   // pin 再計算後にも合わせ直す
+
+/* ---------- 0b. ヒーローテキストの縦位置 ----------
+   PC は top:50% からの -50% で中央寄せ、スマホは CSS で bottom 固定なので 0。
+   （CSS の transform で書くと GSAP の y アニメと衝突するので GSAP 側で持つ） */
+const mm = gsap.matchMedia();
+mm.add({ desktop:"(min-width:769px)", mobile:"(max-width:768px)" }, ctx => {
+  gsap.set(".hero", { yPercent: ctx.conditions.desktop ? -50 : 0 });
+});
 
 /* ---------- 1. ポータルズーム ----------
    仕組み：セクションを画面に固定（pin）し、
-   スクロール量 250vh 分をタイムライン 0→1 に対応させる（scrub）。
-   手前の洞窟PNGだけを穴の中心を基点に scale 1→9 で拡大すると
+   スクロール量 zoomLength 分をタイムライン 0→1 に対応させる（scrub）。
+   手前の洞窟PNGだけを穴の中心を基点に scale 1→maxScale で拡大すると
    「穴の中に吸い込まれる」ように見える。奥の雲はほぼ固定。 */
 const tl = gsap.timeline({
   scrollTrigger:{
     trigger:"#portal",
     start:"top top",
-    end:"+=250%",      // ここを増やすとズームがゆっくりになる
+    end:PORTAL.zoomLength,
     pin:true,
-    scrub:0.8,         // 数値が大きいほど指の動きに遅れて滑らかに追従
+    scrub:PORTAL.scrub,
     anticipatePin:1
   }
 });
 
-tl.to(".hero", { opacity:0, y:-40, duration:0.18, ease:"power2.out" }, 0)
-  .to(".nav",  { opacity:0, duration:0.15 }, 0)
-  .to(".cave", { scale:9, duration:1, ease:"power2.in" }, 0)
+tl.to(".hero", { opacity:0, y:-40, duration:PORTAL.textFadeDuration, ease:"power2.out" }, 0)
+  .to(".nav",  { opacity:0, duration:PORTAL.navFadeDuration }, 0)
+  .to(".cave", { scale:PORTAL.maxScale, duration:1, ease:PORTAL.zoomEase }, 0)
   .to(".sky",  { scale:1.12, duration:1, ease:"none" }, 0);   // 奥行き感の微ズーム
+
+/* ---------- 1b. ズーム後半で穴の縁の木の断片を消す ----------
+   .cave の scale が fadeStartScale を超えるタイムライン位置を
+   zoomEase から逆算し、そこから最後まで opacity 1→0 でフェードさせる。 */
+function progressAtScale(targetScale){
+  const ease = gsap.parseEase(PORTAL.zoomEase);
+  const scaleAt = p => 1 + (PORTAL.maxScale - 1) * ease(p);
+  let lo=0, hi=1;
+  for (let i=0; i<40; i++){ const mid=(lo+hi)/2; if (scaleAt(mid) < targetScale) lo=mid; else hi=mid; }
+  return hi;
+}
+const fadeStart = progressAtScale(PORTAL.fadeStartScale);
+if (fadeStart < 1){
+  tl.to(".cave", { opacity:0, duration:1 - fadeStart, ease:"none" }, fadeStart);
+}
 
 /* ---------- 2. 横に流れるカード ----------
    縦スクロール量を横移動（x）に変換する定番パターン。 */
