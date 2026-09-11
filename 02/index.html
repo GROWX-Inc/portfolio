@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<!--
+  抹茶ドリンクLP：スクロール連動モーション（Sky Cookie 再現）
+  ─────────────────────────────────────────────
+  ■ 文言を変えたいとき
+     ・見出し1 … <h1 id="h1"> の中身
+     ・見出し2 … <h2 id="h2"> の中身（停止位置2・3で共通）
+     ・特徴カード … <div class="card"> 内の <span class="pillText">
+     ・ナビ … <nav> 内
+  ■ 日本語の見出しにするとき
+     ・下の <html lang="en"> を <html lang="ja"> に変えるだけで
+       見出しフォントが「Zen Maru Gothic 900」に切り替わります。
+  ■ 背景の停止位置を微調整したいとき
+     ・JS の BG_ANCHORS を変更（コメント参照）
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MATCHA — Taste The Green</title>
+
+<!-- 画像の先読み -->
+<link rel="preload" as="image" href="assets/bg.webp">
+<link rel="preload" as="image" href="assets/drink.png">
+
+<!-- 見出しフォント（英字：Lilita One／日本語：Zen Maru Gothic 900） -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Zen+Maru+Gothic:wght@900&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --heading-font: 'Lilita One', 'Zen Maru Gothic', system-ui, sans-serif;
+    --heading-weight: 400;
+    --ui-font: 'Helvetica Neue', Helvetica, Arial, 'Hiragino Sans', system-ui, sans-serif;
+    --loading-bg: #4a9de0;
+  }
+  html[lang="ja"]{
+    --heading-font: 'Zen Maru Gothic', 'Hiragino Maru Gothic ProN', sans-serif;
+    --heading-weight: 900;
+  }
+
+  *{ box-sizing:border-box; }
+  html, body{
+    margin:0; padding:0;
+    width:100%;
+    height:100vh;   /* フォールバック */
+    height:100dvh;  /* iOS Safari のツールバー変動に追従 */
+    overflow:hidden;
+    background:var(--loading-bg);
+    overscroll-behavior:none;
+    -webkit-text-size-adjust:100%;
+    font-family:var(--ui-font);
+  }
+  body{ position:fixed; inset:0; }
+
+  /* 画像読込完了までは単色。完了後 JS でフェードイン */
+  #stage{
+    position:fixed; inset:0;
+    opacity:0; visibility:hidden;
+    touch-action:none;
+    user-select:none; -webkit-user-select:none;
+  }
+
+  /* ───── 層1：背景 ───── */
+  #bg{ position:fixed; inset:0; overflow:hidden; z-index:0; }
+  #bgImg{
+    position:absolute; top:0; left:0;
+    display:block;
+    will-change:transform;
+    transform-origin:50% 50%;
+    pointer-events:none;
+  }
+
+  /* ───── ナビ ───── */
+  nav{
+    position:fixed; top:0; left:0; right:0;
+    height:72px;
+    display:flex; align-items:center;
+    padding:0 28px;
+    z-index:10;
+    pointer-events:none;
+  }
+  nav .logo{
+    font-family:var(--heading-font);
+    font-weight:var(--heading-weight);
+    font-size:28px; letter-spacing:.06em;
+    color:#fff;
+    text-shadow:0 2px 8px rgba(0,0,0,.25);
+    pointer-events:auto;
+  }
+  nav .pills{
+    position:absolute; left:50%; top:50%;
+    transform:translate(-50%,-50%);
+    display:flex; gap:8px;
+    pointer-events:auto;
+  }
+  .pill{
+    appearance:none; border:0; cursor:pointer;
+    border-radius:999px;
+    padding:11px 22px;
+    font:600 14px/1 var(--ui-font);
+    color:#111;
+    background:rgba(255,255,255,.55);
+    -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+    box-shadow:0 2px 10px rgba(0,0,0,.08);
+  }
+  .pill.active{ background:#111; color:#fff; }
+
+  /* ───── 層3：見出し ───── */
+  .headline{
+    position:fixed; left:50%; transform:translateX(-50%);
+    width:min(94vw, 1200px);
+    margin:0;
+    font-family:var(--heading-font);
+    font-weight:var(--heading-weight);
+    font-size:clamp(44px, 9vw, 124px);
+    line-height:1.02;
+    letter-spacing:.01em;
+    text-align:center;
+    color:#fff;
+    z-index:3;
+    pointer-events:none;
+  }
+  .headline.top{ top:calc(72px + 5vh); top:calc(72px + 5dvh); }
+  .headline.bottom{
+    bottom:6vh; bottom:6dvh;
+    /* 停止位置3 でチェック柄に重なるため可読性用の影 */
+    text-shadow:0 2px 4px rgba(0,0,0,.35), 0 10px 28px rgba(0,0,0,.28);
+  }
+  .headline .word{ display:inline-block; white-space:nowrap; }
+  .headline .ch{
+    display:inline-block;
+    will-change:transform, opacity, filter;
+    -webkit-backface-visibility:hidden; backface-visibility:hidden;
+  }
+
+  /* ───── 層2：ドリンク ───── */
+  #drinkWrap{
+    position:fixed; left:50%; top:50%;
+    width:55vh; height:55vh;
+    width:55dvh; height:55dvh;
+    transform:translate(-50%,-50%);
+    perspective:1200px;
+    z-index:2;
+    pointer-events:none;
+  }
+  #drink{
+    position:absolute; inset:0;
+    width:100%; height:100%;
+    object-fit:contain;
+    transform-style:preserve-3d;
+    will-change:transform;
+    -webkit-backface-visibility:hidden; backface-visibility:hidden;
+  }
+  #shadow{
+    position:absolute; left:50%; bottom:1.5%;
+    width:56%; height:6.5%;
+    border-radius:50%;
+    background:radial-gradient(ellipse at center,
+      rgba(0,0,0,.65) 0%, rgba(0,0,0,.30) 42%, rgba(0,0,0,0) 72%);
+    opacity:.45;
+    will-change:transform, opacity;
+  }
+
+  /* ───── 層4：特徴カード ───── */
+  #cards{ position:fixed; inset:0; z-index:4; pointer-events:none; }
+  .card{
+    position:absolute;
+    display:flex; align-items:center; gap:10px;
+    opacity:0;                     /* 初期は非表示。停止位置3で表示 */
+    will-change:transform, opacity;
+  }
+  .card .icon{
+    flex:none;
+    width:40px; height:40px; border-radius:12px;
+    background:#111;
+    display:grid; place-items:center;
+    box-shadow:0 4px 14px rgba(0,0,0,.18);
+  }
+  .card .icon svg{
+    width:22px; height:22px;
+    fill:none; stroke:#fff; stroke-width:2;
+    stroke-linecap:round; stroke-linejoin:round;
+  }
+  .card .pillText{
+    border-radius:999px;
+    padding:11px 18px;
+    background:rgba(255,255,255,.74);
+    -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+    font:700 15px/1 var(--ui-font);
+    color:#111;
+    white-space:nowrap;
+    box-shadow:0 2px 12px rgba(0,0,0,.10);
+  }
+  /* デスクトップ配置：ドリンクの左右に2枚ずつ */
+  .card.l1{ right:calc(50% + 19vh); top:40%; }
+  .card.l2{ right:calc(50% + 23vh); top:55%; }
+  .card.r1{ left:calc(50% + 19vh);  top:40%; }
+  .card.r2{ left:calc(50% + 23vh);  top:55%; }
+
+  /* ───── スマホ ───── */
+  @media (max-width:768px){
+    nav{ height:60px; padding:0 14px; justify-content:space-between; }
+    nav .logo{ font-size:22px; }
+    /* スマホではロゴと重ならないよう、ピルは右寄せ */
+    nav .pills{ position:static; transform:none; gap:6px; }
+    .pill{ padding:9px 13px; font-size:12px; }
+    .headline{ font-size:clamp(38px, 12vw, 64px); width:92vw; }
+    .headline.top{ top:calc(60px + 4vh); top:calc(60px + 4dvh); }
+    .headline.bottom{ bottom:2.5vh; bottom:2.5dvh; }
+    #drinkWrap{ width:45vh; height:45vh; width:45dvh; height:45dvh; top:44%; }
+    #cards{
+      inset:auto 12px 17vh 12px;
+      inset:auto 12px 17dvh 12px;
+      display:grid; grid-template-columns:1fr 1fr; gap:8px;
+    }
+    .card, .card.l1, .card.l2, .card.r1, .card.r2{
+      position:static; left:auto; right:auto; top:auto;
+      gap:8px; min-width:0;
+    }
+    .card .icon{ width:32px; height:32px; border-radius:10px; }
+    .card .icon svg{ width:18px; height:18px; }
+    .card .pillText{
+      flex:1; min-width:0;
+      padding:8px 12px; font-size:11px; line-height:1.2;
+      white-space:normal;
+    }
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+
+  <!-- 層1：背景 -->
+  <div id="bg"><img id="bgImg" src="assets/bg.webp" alt="" decoding="async"></div>
+
+  <!-- ナビ -->
+  <nav>
+    <div class="logo">MATCHA</div>
+    <div class="pills">
+      <button class="pill active" type="button">Shop</button>
+      <button class="pill" type="button">Menu</button>
+      <button class="pill" type="button">About</button>
+    </div>
+  </nav>
+
+  <!-- 層3：見出し -->
+  <h1 id="h1" class="headline top">Taste The Green</h1>
+  <h2 id="h2" class="headline bottom">The Difference</h2>
+
+  <!-- 層2：ドリンク＋落ち影 -->
+  <div id="drinkWrap">
+    <div id="shadow"></div>
+    <img id="drink" src="assets/drink.png" alt="Matcha drink" decoding="async">
+  </div>
+
+  <!-- 層4：特徴カード（停止位置3のみ） -->
+  <div id="cards">
+    <div class="card l1" data-side="left">
+      <div class="icon"><svg viewBox="0 0 24 24"><path d="M5 19c0-8 5-13 14-14-1 9-6 14-14 14z"/><path d="M5 19c3-4 6-7 10-9"/></svg></div>
+      <span class="pillText">Stone-ground Uji Matcha</span>
+    </div>
+    <div class="card l2" data-side="left">
+      <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg></div>
+      <span class="pillText">Organic Oat Milk</span>
+    </div>
+    <div class="card r1" data-side="right">
+      <div class="icon"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M4 4l16 16"/></svg></div>
+      <span class="pillText">Zero Refined Sugar</span>
+    </div>
+    <div class="card r2" data-side="right">
+      <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M6 6l12 12M18 6L6 18"/></svg></div>
+      <span class="pillText">Cold-brewed Daily</span>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/Observer.min.js"></script>
+<script>
+(function(){
+  'use strict';
+  gsap.registerPlugin(Observer);
+
+  /* ============================================================
+     設定値
+     ============================================================ */
+  const STOP_COUNT = 3;          // 停止位置の数
+  const D    = 1.0;              // 本体（背景・ドリンク）の遷移時間 [秒]
+  const LEAD = 0.20;             // 文字が本体より早く散り始める時間 [秒]
+  const TAIL = 0.25;             // 本体停止後、文字が着地し終わるまでの時間 [秒]
+  const T0   = LEAD;             // 本体の開始時刻（タイムライン上）
+  const TOTAL = LEAD + D + TAIL; // 1遷移の総時間（1.45秒）
+  const COOLDOWN_MS = 300;       // 遷移完了後、次の入力を受けるまでの猶予（トラックパッド慣性の二重発火防止）
+
+  const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // 背景画像の実寸（assets/bg.webp）
+  const IMG_W = 2000, IMG_H = 3000;
+
+  /* 背景の停止位置（画像のどこを画面のどこに合わせるか）
+       anchor : 画像の縦位置（0=上端, 1=下端）
+       screen : その位置を画面のどこに置くか（0=上端, 1=下端）
+     停止1 = 画像の上端を画面上端に
+     停止2 = 木々の地平線（画像47%）を画面の55%に
+     停止3 = 布の上端（画像57%）を画面の38%に → 布が画面下半分に広がる */
+  const BG_ANCHORS = [
+    { anchor:0.00, screen:0.00 },
+    { anchor:0.47, screen:0.55 },
+    { anchor:0.57, screen:0.38 },
+  ];
+
+  /* ============================================================
+     固定乱数（ページ読み込み時に1回だけ決める）
+     ============================================================ */
+  function mulberry32(a){
+    return function(){
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  const SEED = (Math.random() * 4294967296) >>> 0;
+  const rand = mulberry32(SEED);
+  const rrange = (a, b) => a + (b - a) * rand();
+
+  /* ============================================================
+     要素
+     ============================================================ */
+  const stage  = document.getElementById('stage');
+  const bgImg  = document.getElementById('bgImg');
+  const drink  = document.getElementById('drink');
+  const shadow = document.getElementById('shadow');
+  const cards  = Array.from(document.querySelectorAll('.card'));
+
+  /* ============================================================
+     見出しを1文字ずつ <span> に分割（スペースは通常の空白文字として保持）
+     乱数（飛ぶ高さ・回転・散る順番）はここで1回だけ決めて固定
+     ============================================================ */
+  function splitChars(el){
+    const text = el.textContent.trim().replace(/\s+/g, ' ');
+    el.textContent = '';
+    const chars = [];
+    text.split(' ').forEach((w, wi, arr) => {
+      const word = document.createElement('span');
+      word.className = 'word';
+      for (const ch of w){
+        const s = document.createElement('span');
+        s.className = 'ch';
+        s.textContent = ch;
+        word.appendChild(s);
+        chars.push(s);
+      }
+      el.appendChild(word);
+      if (wi < arr.length - 1) el.appendChild(document.createTextNode(' '));
+    });
+    // 散る順番：ランダムに並べ替えて固定
+    const n = chars.length;
+    const order = chars.map((_, i) => i);
+    for (let i = n - 1; i > 0; i--){
+      const j = Math.floor(rand() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    const rank = new Array(n);
+    order.forEach((ci, k) => { rank[ci] = k; });
+    return chars.map((c, i) => ({
+      el: c,
+      exitY:    rrange(-260, -160),
+      exitRot:  rrange(-45, 45),
+      enterRot: rrange(-30, 30),
+      exitRank: rank[i],
+    }));
+  }
+  const H1 = splitChars(document.getElementById('h1'));
+  const H2 = splitChars(document.getElementById('h2'));
+
+  /* ============================================================
+     背景のレイアウト（画面サイズから画像サイズと停止位置を計算）
+     ============================================================ */
+  let BG_STOPS = [0, 0, 0];
+  function layoutBg(){
+    const vw = stage.clientWidth  || window.innerWidth;
+    const vh = stage.clientHeight || window.innerHeight;
+    const ratio = IMG_H / IMG_W; // 1.5
+    // 横幅を画面幅に合わせる（cover相当）。縦長画面では上下に動く余白が残るよう最低でも 1.8×画面高さ
+    const h = Math.max(vw * ratio, vh * 1.8);
+    const w = h / ratio;
+    bgImg.style.width  = w + 'px';
+    bgImg.style.height = h + 'px';
+    bgImg.style.left   = ((vw - w) / 2) + 'px';
+    const maxOff = h - vh;
+    const clamp = v => Math.min(maxOff, Math.max(0, v));
+    BG_STOPS = BG_ANCHORS.map(a => clamp(a.anchor * h - a.screen * vh));
+  }
+
+  /* ============================================================
+     タイムライン構築
+     tls[i] = 停止位置 i → i+1 への遷移。戻るときは同じものを reverse()
+     すべて fromTo（開始値・終了値を明示）で書き、状態の取り違えを防ぐ
+     ============================================================ */
+  // fromTo は immediateRender:true（既定）にしておく。false にすると、再生位置が
+  // その tween の手前へ戻ったとき開始値が描画されず、初期状態が崩れるため
+  const NO = { immediateRender:true, lazy:false };
+  let tls = [];
+
+  // 山なりの往復（from → peak → to）を2本のtweenで表現
+  function bump(tl, target, from, peak, to, ease){
+    ease = ease || 'sine.inOut';
+    tl.fromTo(target, {...from}, {...peak, duration:D/2, ease, ...NO}, T0);
+    tl.fromTo(target, {...peak}, {...to,   duration:D/2, ease, ...NO}, T0 + D/2);
+  }
+
+  // 文字の退場：ランダム順 stagger 0.03s、本体より LEAD 秒早く（t=0）開始
+  function addExit(tl, data, at){
+    data.forEach(d => {
+      const t = at + 0.03 * d.exitRank;
+      tl.fromTo(d.el, {y:0, rotation:0},
+        {y:d.exitY, rotation:d.exitRot, duration:0.55, ease:'power2.in', ...NO}, t);
+      tl.fromTo(d.el, {opacity:1, filter:'blur(0px)'},
+        {opacity:0, filter:'blur(6px)', duration:0.45, ease:'power1.in', ...NO}, t);
+    });
+  }
+  // 文字の入場：順番どおり stagger 0.035s、最後の文字が endAt に着地
+  function addEnter(tl, data, endAt){
+    const dur = 0.6, n = data.length;
+    const start = endAt - dur - 0.035 * (n - 1);
+    data.forEach((d, i) => {
+      const t = start + 0.035 * i;
+      tl.fromTo(d.el, {y:140, rotation:d.enterRot},
+        {y:0, rotation:0, duration:dur, ease:'back.out(1.4)', ...NO}, t);
+      tl.fromTo(d.el, {opacity:0, filter:'blur(6px)'},
+        {opacity:1, filter:'blur(0px)', duration:dur * 0.7, ease:'power2.out', ...NO}, t);
+    });
+  }
+
+  const DRINK_REST = { rotationY:0, rotationX:0, scale:1, y:0 };
+  const DRINK_PEAK = { rotationY:12, rotationX:-6, scale:1.08, y:-30 };
+  const SHADOW_REST  = { scaleX:1,    scaleY:1,    opacity:0.45 };
+  const SHADOW_LIFT  = { scaleX:0.72, scaleY:0.66, opacity:0.22 };
+  const SHADOW_CLOTH = { scaleX:1.18, scaleY:1.15, opacity:0.62 };
+
+  function buildTimelines(){
+    tls.forEach(t => t.kill());
+    tls = [];
+    for (let i = 0; i < STOP_COUNT - 1; i++){
+      const tl = gsap.timeline({ paused:true, defaults:{ overwrite:false, lazy:false } });
+
+      // 層1：背景の縦移動 ＋ scale 1→1.03→1
+      tl.fromTo(bgImg, {y:-BG_STOPS[i]}, {y:-BG_STOPS[i+1], duration:D, ease:'power2.inOut', ...NO}, T0);
+      bump(tl, bgImg, {scale:1}, {scale:1.03}, {scale:1});
+
+      // 層2：ドリンクの浮き上がり ＋ 落ち影
+      bump(tl, drink, DRINK_REST, DRINK_PEAK, DRINK_REST);
+      bump(tl, shadow, SHADOW_REST, SHADOW_LIFT, (i + 1 === 2) ? SHADOW_CLOTH : SHADOW_REST);
+
+      // 層3：見出し
+      if (i === 0){
+        addExit(tl, H1, 0);                 // 見出し1 退場（本体より0.2秒早く）
+        addEnter(tl, H2, TOTAL);            // 見出し2 入場（本体停止の0.25秒後に着地）
+      }
+      // i===1（停止2→3）は見出しを動かさない
+
+      // 層4：特徴カード（停止2→3 のみ）
+      if (i === 1){
+        cards.forEach((c, k) => {
+          const dx = c.dataset.side === 'left' ? -40 : 40;
+          tl.fromTo(c, {x:dx, opacity:0},
+            {x:0, opacity:1, duration:0.6, ease:'power2.out', ...NO}, T0 + 0.3 + 0.1 * k);
+        });
+      }
+
+      // タイムライン全長を TOTAL に揃える（reverse の対称性のため）
+      tl.set({}, {}, TOTAL);
+
+      if (REDUCED) tl.timeScale(TOTAL / 0.01); // reduce 指定時は 0.01 秒で完了
+      tls.push(tl);
+    }
+  }
+
+  /* ============================================================
+     状態管理
+     ============================================================ */
+  let current = 0;
+  let animating = false;
+  let cooldownUntil = 0;
+  let needsRebuild = false;
+
+  // 現在の停止位置の見た目を、タイムラインの再生位置で描画する
+  function renderCurrent(){
+    for (let i = 0; i < tls.length; i++){
+      if (i < current) tls[i].progress(1, true);
+    }
+    // 終端→始端の順に描画して、開始状態（from値）を確実に反映させる
+    if (current < tls.length) tls[current].progress(1, true).progress(0, true);
+  }
+
+  function rebuild(){
+    needsRebuild = false;
+    layoutBg();
+    buildTimelines();
+    renderCurrent();
+    document.body.dataset.stop = String(current + 1);
+  }
+
+  function go(dir){
+    const now = performance.now();
+    if (animating || now < cooldownUntil) return;
+    const target = current + dir;
+    if (target < 0 || target >= STOP_COUNT) return;
+
+    animating = true;
+    const tl = dir > 0 ? tls[current] : tls[target];
+    const done = () => {
+      tl.eventCallback('onComplete', null);
+      tl.eventCallback('onReverseComplete', null);
+      animating = false;
+      cooldownUntil = performance.now() + COOLDOWN_MS;
+      document.body.dataset.stop = String(current + 1);
+      if (needsRebuild) rebuild();
+    };
+    tl.eventCallback('onComplete', done);
+    tl.eventCallback('onReverseComplete', done);
+    current = target;
+    if (dir > 0) tl.play(); else tl.reverse();
+  }
+
+  /* ============================================================
+     入力：ホイール／スワイプ 1回 = 1遷移（GSAP Observer）
+     wheelSpeed:-1 により、ホイール下＝スワイプ上＝onUp＝「次へ」に統一
+     ============================================================ */
+  Observer.create({
+    target: window,
+    type: 'wheel,touch',
+    wheelSpeed: -1,
+    tolerance: 10,
+    preventDefault: true,
+    onUp:   () => go(+1),
+    onDown: () => go(-1),
+  });
+  // キーボード（矢印・PageUp/Down・Space）
+  window.addEventListener('keydown', e => {
+    if (['ArrowDown','PageDown',' '].includes(e.key)){ e.preventDefault(); go(+1); }
+    else if (['ArrowUp','PageUp'].includes(e.key)){ e.preventDefault(); go(-1); }
+  });
+
+  /* ============================================================
+     リサイズ：遷移中なら完了後に再構築
+     ============================================================ */
+  let resizeTimer = 0;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      if (animating) needsRebuild = true; else rebuild();
+    }, 150);
+  });
+
+  /* ============================================================
+     初期化：画像＋フォントの読み込みを待ってフェードイン
+     ============================================================ */
+  gsap.set(shadow, { xPercent:-50, transformOrigin:'50% 50%' });
+  gsap.set(drink,  { transformOrigin:'50% 60%' });
+
+  const decode = img => (img.decode ? img.decode() : Promise.resolve()).catch(() => {});
+  const fontsReady = Promise.race([
+    (document.fonts && document.fonts.ready) || Promise.resolve(),
+    new Promise(r => setTimeout(r, 2500)),
+  ]);
+
+  Promise.all([decode(bgImg), decode(drink), fontsReady]).then(() => {
+    rebuild();
+    gsap.to(stage, { autoAlpha:1, duration:REDUCED ? 0.01 : 0.7, ease:'power1.out' });
+  });
+})();
+</script>
+</body>
+</html>
