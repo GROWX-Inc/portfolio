@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portal Motion Test</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&display=swap" rel="stylesheet">
+<style>
+  /* ==========================================================
+     差し替えポイント（ここだけ変えれば実サイトになります）
+     1. --cave-img : 穴の部分が透明なPNG（洞窟の縁）
+     2. --sky-img  : 穴の奥に見える雲の画像 or 動画
+     3. --hole-x / --hole-y : PNGの穴の中心位置（%）＝ズームの中心
+     ========================================================== */
+  :root{
+    --cave-img: url("assets/cave.png");
+    --sky-img:  url("assets/sky.jpg");
+    --hole-x: 47.7%;
+    --hole-y: 46.2%;
+    --ink: #f3ecff;
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:auto}
+  body{
+    font-family:"Cormorant Garamond",Georgia,serif;
+    color:#fff; text-shadow:0 2px 24px rgba(0,0,0,.45);
+    background:#1b1220;
+    overflow-x:hidden;
+  }
+
+  /* ---------- セクション1：ポータル（ピン留めされる） ---------- */
+  .portal{
+    position:relative;
+    height:100vh;
+    overflow:hidden;
+  }
+
+  /* 奥のレイヤー：雲。ピン中はほぼ動かさない（微ズームのみ） */
+  .sky{
+    position:absolute; inset:0;
+    background-image:var(--sky-img);
+    background-size:cover; background-position:center;
+    will-change:transform;
+  }
+
+  /* 手前のレイヤー：洞窟の縁（穴が透明なPNG）。これをスケールで拡大する */
+  .cave{
+    position:absolute; inset:0;
+    background-image:var(--cave-img);
+    background-size:cover; background-position:center;
+    transform-origin:var(--hole-x) var(--hole-y);
+    will-change:transform;
+  }
+
+  /* ヒーローテキスト：最初に消える */
+  .hero{
+    position:absolute; left:6vw; top:50%; transform:translateY(-50%);
+    max-width:34vw; will-change:transform,opacity;
+  }
+  .hero h1{
+    font-weight:300; font-size:clamp(48px,7vw,112px); line-height:.9;
+    letter-spacing:.02em; text-transform:uppercase;
+  }
+  .hero h1 em{font-style:italic; font-weight:300; text-transform:none; font-size:.8em}
+  .hero p{margin-top:1.2em; font-size:1.15rem; line-height:1.6; opacity:.85; max-width:30ch}
+
+  .nav{
+    position:absolute; top:0; left:0; right:0; padding:22px 4vw;
+    display:flex; justify-content:space-between; font-size:.8rem; letter-spacing:.2em;
+    z-index:5;
+  }
+  .nav span{opacity:.8}
+
+  /* ---------- セクション2：横に流れるカード ---------- */
+  .journeys{
+    position:relative; height:100vh; overflow:hidden;
+    background:#dfe9ea;
+  }
+  .journeys .sky2{
+    position:absolute; inset:0;
+    background-image:var(--sky-img); background-size:cover; background-position:center;
+  }
+  .journeys header{
+    position:absolute; top:10vh; left:0; right:0; text-align:center; z-index:2;
+  }
+  .journeys h2{
+    font-weight:300; font-size:clamp(36px,5vw,84px); letter-spacing:.06em; text-transform:uppercase;
+  }
+  .journeys header p{margin:1em auto 0; max-width:48ch; line-height:1.6; opacity:.9}
+
+  .track{
+    position:absolute; top:44vh; left:0;
+    display:flex; gap:4vw; padding-left:10vw;
+    will-change:transform;
+  }
+  .card{
+    flex:0 0 auto; width:min(320px,70vw); aspect-ratio:1/1.05;
+    padding:36px 28px;
+    border-radius:26px;
+    background:rgba(255,255,255,.28);
+    border:1px solid rgba(255,255,255,.55);
+    box-shadow:0 30px 60px rgba(60,30,110,.25), inset 0 1px 0 rgba(255,255,255,.7);
+    backdrop-filter:blur(18px) saturate(1.3);
+    -webkit-backdrop-filter:blur(18px) saturate(1.3);
+    color:#2b1f3e;
+    display:flex; flex-direction:column; justify-content:flex-end;
+    transform:rotate(var(--tilt));
+  }
+  .card h3{font-weight:400; font-size:2rem; line-height:1.05}
+  .card p{margin-top:.6em; font-size:1rem; line-height:1.5; opacity:.8}
+  .card:nth-child(1){--tilt:-7deg;  background:rgba(255,246,190,.45)}
+  .card:nth-child(2){--tilt:6deg;   background:rgba(200,225,255,.45)}
+  .card:nth-child(3){--tilt:-4deg;  background:rgba(255,220,240,.45)}
+  .card:nth-child(4){--tilt:8deg;   background:rgba(210,245,235,.45)}
+  .card:nth-child(5){--tilt:-6deg;  background:rgba(255,235,205,.45)}
+  .card:nth-child(6){--tilt:5deg;   background:rgba(230,215,255,.45)}
+
+  .spacer{height:60vh; display:grid; place-items:center; opacity:.5}
+
+  @media (prefers-reduced-motion: reduce){
+    .cave{transform:scale(1)!important}
+  }
+</style>
+</head>
+<body>
+
+<!-- セクション1 -->
+<section class="portal" id="portal">
+  <div class="sky"></div>
+  <div class="cave"></div>
+  <nav class="nav"><span>WORLDS · ATELIER · IMMERSIONS</span><span>✦</span><span>CRAFT · CODEX · CONNECT</span></nav>
+  <div class="hero">
+    <h1>Fall <em>into</em><br>Reverie</h1>
+    <p>Discover realms beyond the known — journeys shaped for those who seek beauty past the ordinary.</p>
+  </div>
+</section>
+
+<!-- セクション2 -->
+<section class="journeys" id="journeys">
+  <div class="sky2"></div>
+  <header>
+    <h2>Forge Beyond the Real</h2>
+    <p>Singular voyages to astonishing destinations, shaped for those who seek beauty beyond the ordinary and the known.</p>
+  </header>
+  <div class="track">
+    <div class="card"><h3>Wild Solitudes</h3><p>Dissolve into untamed horizons and deep calm.</p></div>
+    <div class="card"><h3>Silent Havens</h3><p>Remote escapes far beyond ordinary reach.</p></div>
+    <div class="card"><h3>Bespoke Quests</h3><p>Journeys shaped around your vision and soul.</p></div>
+    <div class="card"><h3>Vivid Dolls</h3><p>Color-drenched worlds for wandering eyes.</p></div>
+    <div class="card"><h3>Mythic Cards</h3><p>Stories folded into every step you take.</p></div>
+    <div class="card"><h3>Gilded Dusk</h3><p>Evenings that shimmer long after they end.</p></div>
+  </div>
+</section>
+
+<div class="spacer"><p>— 以降のセクション —</p></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+<script>
+gsap.registerPlugin(ScrollTrigger);
+
+/* ---------- 0. ズームの基点を「画像の穴の中心」に合わせる ----------
+   background-size:cover で画像が切り取られるので、
+   画面サイズごとに穴の中心が画面のどこに来るかを計算して transform-origin に入れる。 */
+const IMG_RATIO = 2400/1340;          // cave.png の 横/縦
+const HOLE = { x:0.477, y:0.462 };    // cave.png 内の穴の中心（0〜1）
+function setOrigin(){
+  const vw=window.innerWidth, vh=window.innerHeight;
+  let w,h; if (vw/vh > IMG_RATIO){ w=vw; h=vw/IMG_RATIO; } else { h=vh; w=vh*IMG_RATIO; }
+  const ox=(vw-w)/2 + w*HOLE.x, oy=(vh-h)/2 + h*HOLE.y;
+  document.querySelector(".cave").style.transformOrigin = `${ox}px ${oy}px`;
+}
+setOrigin(); window.addEventListener("resize", setOrigin);
+
+/* ---------- 1. ポータルズーム ----------
+   仕組み：セクションを画面に固定（pin）し、
+   スクロール量 250vh 分をタイムライン 0→1 に対応させる（scrub）。
+   手前の洞窟PNGだけを穴の中心を基点に scale 1→9 で拡大すると
+   「穴の中に吸い込まれる」ように見える。奥の雲はほぼ固定。 */
+const tl = gsap.timeline({
+  scrollTrigger:{
+    trigger:"#portal",
+    start:"top top",
+    end:"+=250%",      // ここを増やすとズームがゆっくりになる
+    pin:true,
+    scrub:0.8,         // 数値が大きいほど指の動きに遅れて滑らかに追従
+    anticipatePin:1
+  }
+});
+
+tl.to(".hero", { opacity:0, y:-40, duration:0.18, ease:"power2.out" }, 0)
+  .to(".nav",  { opacity:0, duration:0.15 }, 0)
+  .to(".cave", { scale:9, duration:1, ease:"power2.in" }, 0)
+  .to(".sky",  { scale:1.12, duration:1, ease:"none" }, 0);   // 奥行き感の微ズーム
+
+/* ---------- 2. 横に流れるカード ----------
+   縦スクロール量を横移動（x）に変換する定番パターン。 */
+const track = document.querySelector(".track");
+gsap.to(track, {
+  x: () => -(track.scrollWidth - window.innerWidth + window.innerWidth*0.1),
+  ease:"none",
+  scrollTrigger:{
+    trigger:"#journeys",
+    start:"top top",
+    end:"+=200%",
+    pin:true,
+    scrub:1,
+    invalidateOnRefresh:true
+  }
+});
+</script>
+</body>
+</html>
