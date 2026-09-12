@@ -24,7 +24,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>SHEEP — Taste The Green</title>
+<title>SHEEPERS — Hello, I'm SHEEPERS</title>
 
 <!-- 素材の先読み -->
 <link rel="preload" as="image" href="assets/bg.webp">
@@ -269,17 +269,17 @@
 
   <!-- ナビ -->
   <nav>
-    <div class="logo">SHEEP</div>
+    <div class="logo">SHEEPERS</div>
     <div class="pills">
-      <button class="pill active" type="button">Shop</button>
-      <button class="pill" type="button">Menu</button>
-      <button class="pill" type="button">About</button>
+      <button class="pill active" type="button">Story</button>
+      <button class="pill" type="button">Friends</button>
+      <button class="pill" type="button">Contact</button>
     </div>
   </nav>
 
   <!-- 層3：見出し -->
-  <h1 id="h1" class="headline top">Taste The Green</h1>
-  <h2 id="h2" class="headline bottom">The Difference</h2>
+  <h1 id="h1" class="headline top">Hello, I'm SHEEPERS</h1>
+  <h2 id="h2" class="headline bottom">Nice To Meet You</h2>
 
   <!-- 層2：羊（3D）＋落ち影 -->
   <div id="sheepWrap">
@@ -289,21 +289,25 @@
 
   <!-- 層4：特徴カード（停止位置3のみ） -->
   <div id="cards">
+    <!-- 左上：上向きの矢印 -->
     <div class="card l1" data-side="left">
-      <div class="icon"><svg viewBox="0 0 24 24"><path d="M5 19c0-8 5-13 14-14-1 9-6 14-14 14z"/><path d="M5 19c3-4 6-7 10-9"/></svg></div>
-      <span class="pillText">Stone-ground Uji Matcha</span>
+      <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 20V5"/><path d="M5.5 11.5L12 5l6.5 6.5"/></svg></div>
+      <span class="pillText">Always Jumping</span>
     </div>
+    <!-- 左下：もこもこした雲 -->
     <div class="card l2" data-side="left">
-      <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg></div>
-      <span class="pillText">Organic Oat Milk</span>
+      <div class="icon"><svg viewBox="0 0 24 24"><path d="M7.5 18h9.5a3.5 3.5 0 0 0 .6-6.95A5.2 5.2 0 0 0 8 9.2 4.4 4.4 0 0 0 7.5 18z"/></svg></div>
+      <span class="pillText">Fluffy Since Birth</span>
     </div>
+    <!-- 右上：ハート -->
     <div class="card r1" data-side="right">
-      <div class="icon"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M4 4l16 16"/></svg></div>
-      <span class="pillText">Zero Refined Sugar</span>
+      <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 20s-7.2-4.4-7.2-9.4A3.9 3.9 0 0 1 12 7.6a3.9 3.9 0 0 1 7.2 3C19.2 15.6 12 20 12 20z"/></svg></div>
+      <span class="pillText">Loves Picnics</span>
     </div>
+    <!-- 右下：三日月 -->
     <div class="card r2" data-side="right">
-      <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M6 6l12 12M18 6L6 18"/></svg></div>
-      <span class="pillText">Cold-brewed Daily</span>
+      <div class="icon"><svg viewBox="0 0 24 24"><path d="M20.5 14.2A8.2 8.2 0 0 1 9.8 3.5a8.2 8.2 0 1 0 10.7 10.7z"/></svg></div>
+      <span class="pillText">Naps In The Clouds</span>
     </div>
   </div>
 
@@ -441,6 +445,12 @@ function splitChars(el){
     const word = document.createElement('span');
     word.className = 'word';
     for (const ch of w){
+      /* アポストロフィ（I'm の ' ）は単独で飛ぶと点だけが浮いて見えるので、
+         直前の文字と同じ塊にまとめて一緒に動かす */
+      if ((ch === "'" || ch === '\u2019') && word.lastChild){
+        word.lastChild.textContent += ch;
+        continue;
+      }
       const s = document.createElement('span');
       s.className = 'ch';
       s.textContent = ch;
@@ -765,12 +775,16 @@ let unlockAt = 0;           // 遷移中でも、この時刻を過ぎたら次�
 let queued = 0;             // 溜めてある次の遷移（+1 か -1）。常に1件まで
 let needsRebuild = false;
 
-/* 遷移が終わったら、停止位置の値（0° / 180° / 360°）ぴったりに置き直す */
-function snap(){
+/* 停止位置の値（0° / 180° / 360°）ぴったりに置き直す（数値の代入だけ） */
+function setRestPose(){
   sheepGroup.rotation.y = STOP_ANGLES[current];
   sheepGroup.rotation.x = 0;
   sheepGroup.position.y = 0;
   sheepGroup.scale.set(1, 1, 1);
+}
+/* 置き直して描画まで行う */
+function snap(){
+  setRestPose();
   requestRender();
 }
 
@@ -810,6 +824,11 @@ function startTransition(dir){
     animating = false;
     document.body.dataset.stop = String(current + 1);
     snap();                       // 角度を 0/180/360 ぴったりに戻す
+    /* GSAPは「逆再生の完了」を通知してから開始値を書き戻すことがあり、その値は
+       小数6桁に丸められている（πが3.141593になる）。上の snap が上書きされてしまうので、
+       次のフレームでもう一度だけ入れ直す。見た目は変わらないので描画はしない。
+       次の遷移が始まっていたら、動きを壊さないよう何もしない */
+    requestAnimationFrame(() => { if (!animating) setRestPose(); });
     if (needsRebuild) rebuild();
     // 待たせていた操作があれば、間を空けずにそのまま次へ
     if (queued){
