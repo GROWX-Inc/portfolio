@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<!--
+  羊3DモデルLP：スクロール連動モーション（three.js版）
+  ─────────────────────────────────────────────
+  ベース：~/Projects/matcha-motion-lp（抹茶ドリンク版）
+  違い  ：中央の被写体が「画像」から「3Dモデル（assets/sheep.glb）」に変わり、
+          遷移のたびに羊が 180度ずつ回る（2回で1周して正面に戻る）
+
+  ■ 文言を変えたいとき
+     ・見出し1 … <h1 id="h1"> の中身
+     ・見出し2 … <h2 id="h2"> の中身（停止位置2・3で共通）
+     ・特徴カード … <div class="card"> 内の <span class="pillText">
+     ・ナビ … <nav> 内
+  ■ 日本語の見出しにするとき
+     ・下の <html lang="en"> を <html lang="ja"> に変えるだけで
+       見出しフォントが「Zen Maru Gothic 900」に切り替わります。
+  ■ 背景の停止位置を微調整したいとき … JS の BG_ANCHORS
+  ■ 羊の大きさを微調整したいとき     … JS の VIEW_H（数字が大きいほど羊は小さく写る）
+  ■ 羊の向きを微調整したいとき       … JS の BASE_ORIENT（yaw/pitch/roll、単位は度）
+
+  ※ file:// では動きません。必ずローカルサーバー経由で開いてください。
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SHEEP — Taste The Green</title>
+
+<!-- 素材の先読み -->
+<link rel="preload" as="image" href="assets/bg.webp">
+<link rel="preload" as="fetch" href="assets/sheep.glb" type="model/gltf-binary" crossorigin>
+
+<!-- 見出しフォント（英字：Lilita One／日本語：Zen Maru Gothic 900） -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Zen+Maru+Gothic:wght@900&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --heading-font: 'Lilita One', 'Zen Maru Gothic', system-ui, sans-serif;
+    --heading-weight: 400;
+    --ui-font: 'Helvetica Neue', Helvetica, Arial, 'Hiragino Sans', system-ui, sans-serif;
+    --loading-bg: #4a9de0;
+  }
+  html[lang="ja"]{
+    --heading-font: 'Zen Maru Gothic', 'Hiragino Maru Gothic ProN', sans-serif;
+    --heading-weight: 900;
+  }
+
+  *{ box-sizing:border-box; }
+  html, body{
+    margin:0; padding:0;
+    width:100%;
+    height:100vh;   /* フォールバック */
+    height:100dvh;  /* iOS Safari のツールバー変動に追従 */
+    overflow:hidden;
+    background:var(--loading-bg);
+    overscroll-behavior:none;
+    -webkit-text-size-adjust:100%;
+    font-family:var(--ui-font);
+  }
+  body{ position:fixed; inset:0; }
+
+  /* 素材の読込完了までは単色。完了後 JS でフェードイン */
+  #stage{
+    position:fixed; inset:0;
+    opacity:0; visibility:hidden;
+    touch-action:none;
+    user-select:none; -webkit-user-select:none;
+  }
+
+  /* 読み込み失敗時のメッセージ */
+  #errorBox{
+    position:fixed; inset:0;
+    display:none; place-items:center;
+    padding:24px;
+    text-align:center;
+    color:#fff; font:600 16px/1.7 var(--ui-font);
+    background:var(--loading-bg);
+    z-index:100;
+  }
+  #errorBox.show{ display:grid; }
+  #errorBox small{ display:block; margin-top:8px; opacity:.75; font-weight:400; font-size:13px; }
+
+  /* ───── 層1：背景 ───── */
+  #bg{ position:fixed; inset:0; overflow:hidden; z-index:0; }
+  #bgImg{
+    position:absolute; top:0; left:0;
+    display:block;
+    will-change:transform;
+    transform-origin:50% 50%;
+    pointer-events:none;
+  }
+
+  /* ───── ナビ ───── */
+  nav{
+    position:fixed; top:0; left:0; right:0;
+    height:72px;
+    display:flex; align-items:center;
+    padding:0 28px;
+    z-index:10;
+    pointer-events:none;
+  }
+  nav .logo{
+    font-family:var(--heading-font);
+    font-weight:var(--heading-weight);
+    font-size:28px; letter-spacing:.06em;
+    color:#fff;
+    text-shadow:0 2px 8px rgba(0,0,0,.25);
+    pointer-events:auto;
+  }
+  nav .pills{
+    position:absolute; left:50%; top:50%;
+    transform:translate(-50%,-50%);
+    display:flex; gap:8px;
+    pointer-events:auto;
+  }
+  .pill{
+    appearance:none; border:0; cursor:pointer;
+    border-radius:999px;
+    padding:11px 22px;
+    font:600 14px/1 var(--ui-font);
+    color:#111;
+    background:rgba(255,255,255,.55);
+    -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+    box-shadow:0 2px 10px rgba(0,0,0,.08);
+  }
+  .pill.active{ background:#111; color:#fff; }
+
+  /* ───── 層3：見出し ───── */
+  .headline{
+    position:fixed; left:50%; transform:translateX(-50%);
+    width:min(94vw, 1200px);
+    margin:0;
+    font-family:var(--heading-font);
+    font-weight:var(--heading-weight);
+    font-size:clamp(44px, 9vw, 124px);
+    line-height:1.02;
+    letter-spacing:.01em;
+    text-align:center;
+    color:#fff;
+    z-index:3;
+    pointer-events:none;
+  }
+  .headline.top{ top:calc(72px + 5vh); top:calc(72px + 5dvh); }
+  .headline.bottom{
+    bottom:6vh; bottom:6dvh;
+    /* 停止位置3 でチェック柄に重なるため可読性用の影 */
+    text-shadow:0 2px 4px rgba(0,0,0,.35), 0 10px 28px rgba(0,0,0,.28);
+  }
+  .headline .word{ display:inline-block; white-space:nowrap; }
+  .headline .ch{
+    display:inline-block;
+    will-change:transform, opacity, filter;
+    -webkit-backface-visibility:hidden; backface-visibility:hidden;
+  }
+
+  /* ───── 層2：羊（3Dキャンバス）＋落ち影 ───── */
+  #sheepWrap{
+    position:fixed; left:50%; top:50%;
+    width:70vh; height:70vh;
+    width:70dvh; height:70dvh;
+    transform:translate(-50%,-50%);
+    z-index:2;
+    pointer-events:none;
+  }
+  #sheepCanvas{
+    position:absolute; inset:0;
+    width:100%; height:100%;
+    display:block;
+    background:transparent;   /* 背景画像が透ける */
+  }
+  #shadow{
+    position:absolute; left:50%; top:50%;   /* top は JS が羊の足元に合わせて上書き */
+    width:46%; height:6%;
+    transform:translate(-50%,-50%);
+    border-radius:50%;
+    background:radial-gradient(ellipse at center,
+      rgba(0,0,0,.80) 0%, rgba(0,0,0,.45) 40%, rgba(0,0,0,.12) 62%, rgba(0,0,0,0) 78%);
+    opacity:.45;
+    will-change:transform, opacity;
+  }
+
+  /* ───── 層4：特徴カード ───── */
+  #cards{ position:fixed; inset:0; z-index:4; pointer-events:none; }
+  .card{
+    position:absolute;
+    display:flex; align-items:center; gap:10px;
+    opacity:0;                     /* 初期は非表示。停止位置3で表示 */
+    will-change:transform, opacity;
+  }
+  .card .icon{
+    flex:none;
+    width:40px; height:40px; border-radius:12px;
+    background:#111;
+    display:grid; place-items:center;
+    box-shadow:0 4px 14px rgba(0,0,0,.18);
+  }
+  .card .icon svg{
+    width:22px; height:22px;
+    fill:none; stroke:#fff; stroke-width:2;
+    stroke-linecap:round; stroke-linejoin:round;
+  }
+  .card .pillText{
+    border-radius:999px;
+    padding:11px 18px;
+    background:rgba(255,255,255,.74);
+    -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+    font:700 15px/1 var(--ui-font);
+    color:#111;
+    white-space:nowrap;
+    box-shadow:0 2px 12px rgba(0,0,0,.10);
+  }
+  /* デスクトップ配置：羊の左右に2枚ずつ */
+  .card.l1{ right:calc(50% + 19vh); top:40%; }
+  .card.l2{ right:calc(50% + 23vh); top:55%; }
+  .card.r1{ left:calc(50% + 19vh);  top:40%; }
+  .card.r2{ left:calc(50% + 23vh);  top:55%; }
+
+  /* ───── スマホ ───── */
+  @media (max-width:768px){
+    nav{ height:60px; padding:0 14px; justify-content:space-between; }
+    nav .logo{ font-size:22px; }
+    /* スマホではロゴと重ならないよう、ピルは右寄せ */
+    nav .pills{ position:static; transform:none; gap:6px; }
+    .pill{ padding:8px 12px; font-size:14px; }
+    .headline{ font-size:clamp(38px, 12vw, 64px); width:92vw; }
+    .headline.top{ top:calc(60px + 4vh); top:calc(60px + 4dvh); }
+    /* 停止位置3ではチェック柄の上に重なるので、影を強めて読めるようにする */
+    .headline.bottom{
+      bottom:2.5vh; bottom:2.5dvh;
+      text-shadow:0 2px 5px rgba(0,0,0,.5), 0 6px 18px rgba(0,0,0,.42), 0 0 2px rgba(0,0,0,.3);
+    }
+    #sheepWrap{ width:45vh; height:45vh; width:45dvh; height:45dvh; top:44%; }
+    #cards{
+      inset:auto 12px 17vh 12px;
+      inset:auto 12px 17dvh 12px;
+      display:grid; grid-template-columns:1fr 1fr; gap:8px;
+    }
+    .card, .card.l1, .card.l2, .card.r1, .card.r2{
+      position:static; left:auto; right:auto; top:auto;
+      gap:8px; min-width:0;
+    }
+    .card .icon{ width:32px; height:32px; border-radius:10px; }
+    .card .icon svg{ width:18px; height:18px; }
+    .card .pillText{
+      flex:1; min-width:0;
+      padding:7px 10px; font-size:14px; line-height:1.25;
+      white-space:normal;
+      background:rgba(255,255,255,.92);   /* 細かい柄の上でも読めるよう濃くする */
+      box-shadow:0 2px 10px rgba(0,0,0,.16);
+    }
+  }
+</style>
+</head>
+<body>
+
+<div id="errorBox">
+  <div>
+    モデルを読み込めませんでした
+    <small id="errorDetail">assets/sheep.glb を確認してください（ブラウザのコンソールに原因が出ています）</small>
+  </div>
+</div>
+
+<div id="stage">
+
+  <!-- 層1：背景 -->
+  <div id="bg"><img id="bgImg" src="assets/bg.webp" alt="" decoding="async"></div>
+
+  <!-- ナビ -->
+  <nav>
+    <div class="logo">SHEEP</div>
+    <div class="pills">
+      <button class="pill active" type="button">Shop</button>
+      <button class="pill" type="button">Menu</button>
+      <button class="pill" type="button">About</button>
+    </div>
+  </nav>
+
+  <!-- 層3：見出し -->
+  <h1 id="h1" class="headline top">Taste The Green</h1>
+  <h2 id="h2" class="headline bottom">The Difference</h2>
+
+  <!-- 層2：羊（3D）＋落ち影 -->
+  <div id="sheepWrap">
+    <div id="shadow"></div>
+    <canvas id="sheepCanvas"></canvas>
+  </div>
+
+  <!-- 層4：特徴カード（停止位置3のみ） -->
+  <div id="cards">
+    <div class="card l1" data-side="left">
+      <div class="icon"><svg viewBox="0 0 24 24"><path d="M5 19c0-8 5-13 14-14-1 9-6 14-14 14z"/><path d="M5 19c3-4 6-7 10-9"/></svg></div>
+      <span class="pillText">Stone-ground Uji Matcha</span>
+    </div>
+    <div class="card l2" data-side="left">
+      <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg></div>
+      <span class="pillText">Organic Oat Milk</span>
+    </div>
+    <div class="card r1" data-side="right">
+      <div class="icon"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M4 4l16 16"/></svg></div>
+      <span class="pillText">Zero Refined Sugar</span>
+    </div>
+    <div class="card r2" data-side="right">
+      <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M6 6l12 12M18 6L6 18"/></svg></div>
+      <span class="pillText">Cold-brewed Daily</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- GSAP（クラシック読み込み。下の module より先に実行される） -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/Observer.min.js"></script>
+
+<!-- three.js の置き場所（ES Modules） -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+'use strict';
+import * as THREE from 'three';
+import { GLTFLoader }    from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+
+gsap.registerPlugin(Observer);
+
+/* ============================================================
+   設定値
+   ============================================================ */
+const STOP_COUNT = 3;          // 停止位置の数
+const D    = 0.75;             // 本体（背景・羊）の遷移時間 [秒]
+const LEAD = 0.15;             // 文字が本体より早く散り始める時間 [秒]
+const TAIL = 0.18;             // 本体停止後、文字が着地し終わるまでの時間 [秒]
+const T0   = LEAD;             // 本体の開始時刻（タイムライン上）
+const TOTAL = LEAD + D + TAIL; // 1遷移の総時間（1.08秒）
+
+/* 入力ロックを解除するタイミング［秒］。遷移の開始からこの時間が過ぎたら、
+   まだアニメが終わっていなくても次の操作を受け付ける（本体の動きの80%地点）。
+   受け付けた操作は「今の遷移が終わり次第すぐ再生する」ようキューに1件だけ溜める */
+const UNLOCK_AFTER = 0.60;
+
+/* 特徴カードの出るタイミング［秒］。遷移時間を1.0秒→0.75秒に縮めたので、
+   はみ出さないよう同じ比率（0.75倍）で詰めてある（元は 0.3 / 0.1 / 0.6） */
+const CARD_DELAY   = 0.225;    // 遷移開始から1枚目が出るまで
+const CARD_STAGGER = 0.075;    // カード同士のずれ
+const CARD_DUR     = 0.45;     // 1枚がフェードインする時間
+
+const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// 背景画像の実寸（assets/bg.webp）
+const IMG_W = 2000, IMG_H = 3000;
+
+/* 背景の停止位置（画像のどこを画面のどこに合わせるか）
+     anchor : 画像の縦位置（0=上端, 1=下端）
+     screen : その位置を画面のどこに置くか（0=上端, 1=下端）
+   停止1 = 画像の上端を画面上端に
+   停止2 = 木々の地平線（画像47%）を画面の55%に
+   停止3 = 布の上端（画像57%）を画面の38%に → 布が画面下半分に広がる */
+const BG_ANCHORS = [
+  { anchor:0.00, screen:0.00 },
+  { anchor:0.47, screen:0.55 },
+  { anchor:0.57, screen:0.38 },
+];
+/* 背景の高さを画面高さの何倍まで大きくするか。
+   スマホは画面が縦長（1:2前後）で背景画像（2:3）と形が違うため、PCと同じ1.8倍だと
+   画像が画面幅の2.6倍まで拡大され、ごく一部しか映らなくなる。
+   かといって引きすぎると、停止位置1の時点で布まで見えてしまい3つの停止位置が
+   見分けられなくなる。布の上端（画像の57%）が停止位置1で入らない範囲で最大限引く */
+const BG_MIN_H_PC = 1.80;
+const BG_MIN_H_SP = 1.58;
+
+/* 羊の停止角度：1遷移あたり180度、2回で1周して正面に戻る（0° → 180° → 360°）
+   停止位置3は 360度 のまま持つ。0度に丸めてしまうと 180→0 の逆回転になってしまうため、
+   数値としては増え続ける向き（0→180→360）で持ち、戻るときだけ逆にたどる */
+const STOP_ANGLES = [0, Math.PI, 2 * Math.PI];
+
+/* 羊の基準姿勢の補正角度［度］。
+   これは「停止位置1（rotation.y = 0度）のときにどう見えるか」を決める値。
+   スクロールの回転（0→180→360度）とは別の層でかかるので、
+   この値を変えても「1と3で正面・2で真後ろ」の関係は変わらない。
+   参照画像と重ねて目視で合わせた確定値。 */
+const BASE_ORIENT = { yaw: 9, pitch: 11, roll: 0 };
+
+/* カメラの画角と「キャンバスの縦に何単位ぶん写すか」
+   羊は最大辺 1.0 に正規化するので、1.45 なら上下に約22%ずつ余白ができる。
+   浮き上がり(+0.15)と拡大(×1.06)でも切れない余白を確保している。
+   スマホは少しカメラを引いて（数値を大きくして）見切れを防ぐ。 */
+const FOV = 35;
+const VIEW_H_DESKTOP = 1.45;
+const VIEW_H_MOBILE  = 1.75;
+
+/* ============================================================
+   固定乱数（ページ読み込み時に1回だけ決める）
+   ============================================================ */
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const SEED = (Math.random() * 4294967296) >>> 0;
+const rand = mulberry32(SEED);
+const rrange = (a, b) => a + (b - a) * rand();
+
+/* ============================================================
+   要素
+   ============================================================ */
+const stage     = document.getElementById('stage');
+const bgImg     = document.getElementById('bgImg');
+const sheepWrap = document.getElementById('sheepWrap');
+const canvas    = document.getElementById('sheepCanvas');
+const shadow    = document.getElementById('shadow');
+const cards     = Array.from(document.querySelectorAll('.card'));
+const errorBox  = document.getElementById('errorBox');
+const errorDet  = document.getElementById('errorDetail');
+
+function showError(msg, err){
+  console.error('[sheep-motion-lp]', msg, err || '');
+  errorDet.textContent = msg;
+  errorBox.classList.add('show');
+}
+
+/* ============================================================
+   見出しを1文字ずつ <span> に分割（スペースは通常の空白文字として保持）
+   乱数（飛ぶ高さ・回転・散る順番）はここで1回だけ決めて固定
+   ============================================================ */
+function splitChars(el){
+  const text = el.textContent.trim().replace(/\s+/g, ' ');
+  el.textContent = '';
+  const chars = [];
+  text.split(' ').forEach((w, wi, arr) => {
+    const word = document.createElement('span');
+    word.className = 'word';
+    for (const ch of w){
+      const s = document.createElement('span');
+      s.className = 'ch';
+      s.textContent = ch;
+      word.appendChild(s);
+      chars.push(s);
+    }
+    el.appendChild(word);
+    if (wi < arr.length - 1) el.appendChild(document.createTextNode(' '));
+  });
+  // 散る順番：ランダムに並べ替えて固定
+  const n = chars.length;
+  const order = chars.map((_, i) => i);
+  for (let i = n - 1; i > 0; i--){
+    const j = Math.floor(rand() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  const rank = new Array(n);
+  order.forEach((ci, k) => { rank[ci] = k; });
+  return chars.map((c, i) => ({
+    el: c,
+    exitY:    rrange(-260, -160),
+    exitRot:  rrange(-45, 45),
+    enterRot: rrange(-30, 30),
+    exitRank: rank[i],
+  }));
+}
+const H1 = splitChars(document.getElementById('h1'));
+const H2 = splitChars(document.getElementById('h2'));
+
+/* ============================================================
+   three.js のセットアップ
+   ============================================================ */
+const renderer = new THREE.WebGLRenderer({
+  canvas, alpha:true, antialias:true, powerPreference:'high-performance',
+});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+/* ACESは明るい部分を暗く圧縮するので、白い毛が灰色に沈む。
+   明部を素直に残す Neutral を使う（古いthree.jsなら圧縮なしにフォールバック） */
+renderer.toneMapping = THREE.NeutralToneMapping ?? THREE.NoToneMapping;
+renderer.toneMappingExposure = 1.60;
+renderer.setClearAlpha(0);
+
+const scene  = new THREE.Scene();          // 背景色は付けない（HTMLの背景画像を透かす）
+const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 100);
+
+/* 真昼の屋外に置いた想定のライティング。
+   上下から回り込む光（Hemisphere）を主役にして、影側が沈まないようにする。
+   AmbientLight は Hemisphere と役割が重なって色が濁るので使わない */
+const hemi = new THREE.HemisphereLight(0xbfe3ff, 0xdcc9a8, 1.5);
+scene.add(hemi);
+// 主光源：右上前方
+const keyLight = new THREE.DirectionalLight(0xffffff, 2.5);
+keyLight.position.set(2.2, 3.0, 2.4);
+scene.add(keyLight);
+// 補助光：左下前方（反対側の落ち込みを起こす）
+const fillLight = new THREE.DirectionalLight(0xffffff, 1.2);
+fillLight.position.set(-2.4, -1.4, 2.0);
+scene.add(fillLight);
+
+// 羊を入れる箱。GSAPはこの箱の回転・位置・拡大を動かす
+const sheepGroup = new THREE.Group();
+scene.add(sheepGroup);
+
+/* スマホ判定。CSSの @media (max-width:768px) と同じ境目にそろえる */
+const isMobile = () => window.matchMedia('(max-width:768px)').matches;
+
+let viewH = VIEW_H_DESKTOP;   // キャンバスの縦に写す世界の高さ
+
+/* キャンバスの実寸に合わせて renderer とカメラを更新し、落ち影も足元へ置く */
+function resizeRenderer(){
+  const w = sheepWrap.clientWidth  || 1;
+  const h = sheepWrap.clientHeight || 1;
+  viewH = isMobile() ? VIEW_H_MOBILE : VIEW_H_DESKTOP;
+
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  // 縦に viewH ぶんがちょうど収まるカメラ距離
+  camera.position.set(0, 0, (viewH / 2) / Math.tan((FOV / 2) * Math.PI / 180));
+  camera.lookAt(0, 0, 0);
+  camera.updateProjectionMatrix();
+
+  // 羊の足元（正規化後の底面 y=-0.5）が画面のどこに来るかを計算して落ち影を置く
+  shadow.style.top = (50 + (0.5 / (viewH / 2)) * 50) + '%';
+}
+
+let frameCount = 0;            // 実際に描いた回数（停止中は増えない）
+/* 停止中は一切描画しない。遷移中だけ、GSAPの毎フレーム通知で1回ずつ描く
+   （GSAPのonUpdateは1フレームに1回しか来ないので、その場で描けばよい） */
+function render(){
+  renderer.render(scene, camera);
+  frameCount++;
+}
+const requestRender = render;
+
+/* ============================================================
+   GLB の読み込み（EXT_meshopt_compression のため MeshoptDecoder が必須）
+   読み込み後にバウンディングボックスから中心と大きさを測り、
+   「中心を原点へ」「最大辺を1.0へ」正規化する（数値のハードコードはしない）
+   ============================================================ */
+let fitInfo = null;
+let fitGroup = null;      // 正規化（中心合わせ＋拡大）を担当するグループ
+let modelRoot = null;     // GLBから読み込んだモデルそのもの
+
+/* BASE_ORIENT（度）をモデルのグループに反映する */
+function applyBaseOrient(){
+  if (!fitGroup) return;
+  const rad = d => d * Math.PI / 180;
+  fitGroup.rotation.set(rad(BASE_ORIENT.pitch), rad(BASE_ORIENT.yaw), rad(BASE_ORIENT.roll), 'YXZ');
+}
+
+function loadSheep(){
+  return new Promise((resolve, reject) => {
+    const loader = new GLTFLoader();
+    loader.setMeshoptDecoder(MeshoptDecoder);   // ← これが無いと読み込みに失敗する
+    loader.load(
+      'assets/sheep.glb',
+      gltf => {
+        const model = gltf.scene;
+
+        // 1) 置かれたままの大きさ・中心を測る
+        const box = new THREE.Box3().setFromObject(model);
+        if (!isFinite(box.min.x) || box.isEmpty()){
+          reject(new Error('モデルの大きさを測れませんでした（中身が空の可能性）'));
+          return;
+        }
+        const size   = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        const maxEdge = Math.max(size.x, size.y, size.z);
+        const s = 1 / maxEdge;
+
+        // 2) 中心を原点へ寄せ、外側の箱で最大辺が1.0になるよう拡大
+        model.position.sub(center);
+        const fit = new THREE.Group();
+        fit.add(model);
+        fit.scale.setScalar(s);
+        sheepGroup.add(fit);
+        fitGroup = fit;
+        modelRoot = model;
+
+        // 3) 基準姿勢の補正角度をかける（BASE_ORIENT の固定値）
+        fit.rotation.order = 'YXZ';   // yaw → pitch → roll の順で効く
+        applyBaseOrient();
+
+        // 4) 材質の最終調整（毛が黒く潰れないように）
+        model.traverse(o => {
+          if (o.isMesh){
+            o.castShadow = o.receiveShadow = false;
+            o.frustumCulled = false;
+            const m = o.material;
+            if (m && m.isMeshStandardMaterial){
+              if (m.map) m.map.anisotropy = renderer.capabilities.getMaxAnisotropy();
+              m.envMapIntensity = 1.0;
+            }
+          }
+        });
+
+        fitInfo = {
+          size: size.toArray().map(v => +v.toFixed(4)),
+          center: center.toArray().map(v => +v.toFixed(4)),
+          maxEdge: +maxEdge.toFixed(4),
+          scale: +s.toFixed(4),
+        };
+        console.log('[sheep-motion-lp] 正規化:', fitInfo);
+        resolve(gltf);
+      },
+      undefined,
+      err => reject(err),
+    );
+  });
+}
+
+/* ============================================================
+   背景のレイアウト（画面サイズから画像サイズと停止位置を計算）
+   ============================================================ */
+let BG_STOPS = [0, 0, 0];
+let bgInfo = null;        // 動作確認用：背景の実寸と停止位置
+function layoutBg(){
+  const vw = stage.clientWidth  || window.innerWidth;
+  const vh = stage.clientHeight || window.innerHeight;
+  const sp = isMobile();
+  const ratio = IMG_H / IMG_W; // 1.5
+
+  /* 画面を必ず覆うための最低サイズ（cover相当）と、
+     上下に動かす余白を作るための最低サイズ、の大きいほうを採る。
+       ・横を覆うのに必要な高さ … vw * 1.5
+       ・上下に動かすのに必要な高さ … vh * 倍率 */
+  const coverH = vw * ratio;
+  const panH   = vh * (sp ? BG_MIN_H_SP : BG_MIN_H_PC);
+  const h = Math.max(coverH, panH, vh);   // 縦も必ず覆う
+  const w = h / ratio;
+
+  bgImg.style.width  = w + 'px';
+  bgImg.style.height = h + 'px';
+  bgImg.style.left   = ((vw - w) / 2) + 'px';
+
+  // 停止位置の縦パン量は、実際の表示サイズと画面高さから毎回計算する
+  const maxOff = Math.max(0, h - vh);
+  const clamp = v => Math.min(maxOff, Math.max(0, v));
+  BG_STOPS = BG_ANCHORS.map(a => clamp(a.anchor * h - a.screen * vh));
+
+  bgInfo = {
+    画面: [Math.round(vw), Math.round(vh)],
+    背景の表示サイズ: [Math.round(w), Math.round(h)],
+    画面幅に対する倍率: +(w / vw).toFixed(2),
+    画面に映る画像の縦割合: +(vh / h).toFixed(3),
+    左右のはみ出し: Math.round(w - vw),
+    停止位置のパン量: BG_STOPS.map(v => Math.round(v)),
+    可動域: Math.round(maxOff),
+    頭打ちなし: BG_STOPS.every((v, i) => Math.abs(v - (BG_ANCHORS[i].anchor * h - BG_ANCHORS[i].screen * vh)) < 0.5),
+    停止1の下端が画像の何割: +((vh) / h).toFixed(3),
+    モード: sp ? 'スマホ' : 'PC',
+  };
+}
+
+/* ============================================================
+   タイムライン構築
+   tls[i] = 停止位置 i → i+1 への遷移。戻るときは同じものを reverse()
+   すべて fromTo（開始値・終了値を明示）で書き、状態の取り違えを防ぐ
+   ============================================================ */
+// fromTo は immediateRender:true（既定）にしておく。false にすると、再生位置が
+// その tween の手前へ戻ったとき開始値が描画されず、初期状態が崩れるため
+const NO = { immediateRender:true, lazy:false };
+let tls = [];
+
+// 山なりの往復（from → peak → to）を2本のtweenで表現
+function bump(tl, target, from, peak, to, ease){
+  ease = ease || 'sine.inOut';
+  tl.fromTo(target, {...from}, {...peak, duration:D/2, ease, ...NO}, T0);
+  tl.fromTo(target, {...peak}, {...to,   duration:D/2, ease, ...NO}, T0 + D/2);
+}
+
+// 文字の退場：ランダム順 stagger 0.025s、本体より LEAD 秒早く（t=0）開始
+function addExit(tl, data, at){
+  data.forEach(d => {
+    const t = at + 0.025 * d.exitRank;
+    tl.fromTo(d.el, {y:0, rotation:0},
+      {y:d.exitY, rotation:d.exitRot, duration:0.55, ease:'power2.in', ...NO}, t);
+    tl.fromTo(d.el, {opacity:1, filter:'blur(0px)'},
+      {opacity:0, filter:'blur(6px)', duration:0.45, ease:'power1.in', ...NO}, t);
+  });
+}
+// 文字の入場：順番どおり stagger 0.03s、最後の文字が endAt に着地
+function addEnter(tl, data, endAt){
+  const dur = 0.6, n = data.length;
+  const start = endAt - dur - 0.03 * (n - 1);
+  data.forEach((d, i) => {
+    const t = start + 0.03 * i;
+    tl.fromTo(d.el, {y:140, rotation:d.enterRot},
+      {y:0, rotation:0, duration:dur, ease:'back.out(1.4)', ...NO}, t);
+    tl.fromTo(d.el, {opacity:0, filter:'blur(6px)'},
+      {opacity:1, filter:'blur(0px)', duration:dur * 0.7, ease:'power2.out', ...NO}, t);
+  });
+}
+
+const SHEEP_LIFT   = 0.15;   // 浮き上がる高さ（羊の最大辺=1.0 に対して）
+const SHEEP_SCALE  = 1.06;   // 一番大きくなる瞬間の倍率
+const SHEEP_TILT   = -0.08;  // 前後の傾き [ラジアン]
+const SHADOW_REST  = { scaleX:1,    scaleY:1,    opacity:0.45 };
+const SHADOW_LIFT  = { scaleX:0.72, scaleY:0.66, opacity:0.22 };
+const SHADOW_CLOTH = { scaleX:1.18, scaleY:1.15, opacity:0.62 };
+
+function buildTimelines(){
+  tls.forEach(t => t.kill());
+  tls = [];
+  for (let i = 0; i < STOP_COUNT - 1; i++){
+    const tl = gsap.timeline({
+      paused:true,
+      defaults:{ overwrite:false, lazy:false },
+      onUpdate: requestRender,          // アニメ中だけ3Dを描き直す
+    });
+
+    // 層1：背景の縦移動 ＋ scale 1→1.03→1
+    tl.fromTo(bgImg, {y:-BG_STOPS[i]}, {y:-BG_STOPS[i+1], duration:D, ease:'power2.inOut', ...NO}, T0);
+    bump(tl, bgImg, {scale:1}, {scale:1.03}, {scale:1});
+
+    // 層2：羊の回転（0°→180°→360°。行きは常に同じ向き、戻りはその逆再生）
+    tl.fromTo(sheepGroup.rotation,
+      { y: STOP_ANGLES[i] },
+      { y: STOP_ANGLES[i+1], duration:D, ease:'power2.inOut', ...NO }, T0);
+    // 同時に：ふわっと浮く ／ ひと回り大きくなる ／ ごく小さく傾く
+    bump(tl, sheepGroup.position, {y:0}, {y:SHEEP_LIFT}, {y:0});
+    bump(tl, sheepGroup.scale, {x:1,y:1,z:1},
+         {x:SHEEP_SCALE,y:SHEEP_SCALE,z:SHEEP_SCALE}, {x:1,y:1,z:1});
+    bump(tl, sheepGroup.rotation, {x:0}, {x:SHEEP_TILT}, {x:0});
+    // 落ち影：浮いている間だけ薄く小さく。停止位置3（布の上）では濃く広く
+    bump(tl, shadow, SHADOW_REST, SHADOW_LIFT, (i + 1 === 2) ? SHADOW_CLOTH : SHADOW_REST);
+
+    // 層3：見出し
+    if (i === 0){
+      addExit(tl, H1, 0);                 // 見出し1 退場（本体より0.2秒早く）
+      addEnter(tl, H2, TOTAL);            // 見出し2 入場（本体停止の0.25秒後に着地）
+    }
+    // i===1（停止2→3）は見出しを動かさない
+
+    // 層4：特徴カード（停止2→3 のみ）
+    if (i === 1){
+      cards.forEach((c, k) => {
+        const dx = c.dataset.side === 'left' ? -40 : 40;
+        tl.fromTo(c, {x:dx, opacity:0},
+          {x:0, opacity:1, duration:CARD_DUR, ease:'power2.out', ...NO},
+          T0 + CARD_DELAY + CARD_STAGGER * k);
+      });
+    }
+
+    // タイムライン全長を TOTAL に揃える（reverse の対称性のため）
+    tl.set({}, {}, TOTAL);
+
+    if (REDUCED) tl.timeScale(TOTAL / 0.01); // reduce 指定時は 0.01 秒で完了
+    tls.push(tl);
+  }
+}
+
+/* ============================================================
+   状態管理
+   ============================================================ */
+let current = 0;
+let animating = false;
+let ready = false;          // 素材の読込が終わるまで操作を受け付けない
+let unlockAt = 0;           // 遷移中でも、この時刻を過ぎたら次の操作を受け付ける
+let queued = 0;             // 溜めてある次の遷移（+1 か -1）。常に1件まで
+let needsRebuild = false;
+
+/* 遷移が終わったら、停止位置の値（0° / 180° / 360°）ぴったりに置き直す */
+function snap(){
+  sheepGroup.rotation.y = STOP_ANGLES[current];
+  sheepGroup.rotation.x = 0;
+  sheepGroup.position.y = 0;
+  sheepGroup.scale.set(1, 1, 1);
+  requestRender();
+}
+
+// 現在の停止位置の見た目を、タイムラインの再生位置で描画する
+function renderCurrent(){
+  for (let i = 0; i < tls.length; i++){
+    if (i < current) tls[i].progress(1, true);
+  }
+  // 終端→始端の順に描画して、開始状態（from値）を確実に反映させる
+  if (current < tls.length) tls[current].progress(1, true).progress(0, true);
+  snap();
+}
+
+function rebuild(){
+  needsRebuild = false;
+  lastLayoutW = stage.clientWidth  || window.innerWidth;
+  lastLayoutH = stage.clientHeight || window.innerHeight;
+  layoutBg();
+  resizeRenderer();
+  buildTimelines();
+  renderCurrent();
+  document.body.dataset.stop = String(current + 1);
+}
+
+/* 実際に遷移を1回再生する */
+let transitionCount = 0;      // 動作確認用：遷移が何回起きたか
+function startTransition(dir){
+  const target = current + dir;
+  transitionCount++;
+  animating = true;
+  unlockAt = performance.now() + UNLOCK_AFTER * 1000;
+
+  const tl = dir > 0 ? tls[current] : tls[target];
+  const done = () => {
+    tl.eventCallback('onComplete', null);
+    tl.eventCallback('onReverseComplete', null);
+    animating = false;
+    document.body.dataset.stop = String(current + 1);
+    snap();                       // 角度を 0/180/360 ぴったりに戻す
+    if (needsRebuild) rebuild();
+    // 待たせていた操作があれば、間を空けずにそのまま次へ
+    if (queued){
+      const next = queued;
+      queued = 0;
+      if (current + next >= 0 && current + next < STOP_COUNT) startTransition(next);
+    }
+  };
+  tl.eventCallback('onComplete', done);
+  tl.eventCallback('onReverseComplete', done);
+  current = target;
+  if (dir > 0) tl.play(); else tl.reverse();
+}
+
+/* 操作を受けたときの入口。
+   ・遷移開始から UNLOCK_AFTER 秒までは無視（1回のホイールで2つ進まないように）
+   ・それを過ぎていれば、まだ動いていても受け付けてキューに1件だけ溜める
+     （今のアニメは止めない。終わり次第すぐ次が再生される）
+   ・連打してもキューは常に1件なので、3つ先まで飛ぶことはない */
+function go(dir){
+  if (!ready) return;
+  if (animating && performance.now() < unlockAt) return;
+  const target = current + dir;
+  if (target < 0 || target >= STOP_COUNT) return;
+  if (animating){ queued = dir; return; }
+  startTransition(dir);
+}
+
+/* ============================================================
+   入力：ホイール／スワイプ 1回 = 1遷移（GSAP Observer）
+   wheelSpeed:-1 により、ホイール下＝スワイプ上＝onUp＝「次へ」に統一
+   ============================================================ */
+/* ── トラックパッドの慣性スクロール対策 ──────────────────
+   指を離した後も、小さなホイールイベントが1秒以上だらだら続く。
+   これを「ひと振りの続き」と見なして無視しないと、1回のフリックで
+   2回進んでしまう。判定はこの2つ：
+     ・前のイベントから TAIL_GAP 以上空いた → 新しい操作
+     ・入力ロックが解けた後に REARM_MAG 以上の勢いが来た → 新しい操作
+       （慣性の尻尾はその頃には勢い5以下まで落ちているので引っかからない。
+         マウスホイールは1目盛り100前後あるので、回し続ければ次へ進める） */
+const TAIL_GAP  = 150;   // ms
+const REARM_MAG = 40;    // ホイールの1イベントぶんの勢い
+let lastWheelAt = 0;
+let wheelGestureLocked = false;
+
+function wheelIgnore(e){
+  if (!e || e.type !== 'wheel') return false;
+  const now = performance.now();
+  const gap = now - lastWheelAt;
+  lastWheelAt = now;
+  if (gap > TAIL_GAP){ wheelGestureLocked = false; return false; }
+  if (!wheelGestureLocked) return false;
+  if (Math.abs(e.deltaY) >= REARM_MAG && now >= unlockAt){ wheelGestureLocked = false; return false; }
+  return true;                                   // ひと振りの続き＝無視
+}
+
+Observer.create({
+  target: window,
+  type: 'wheel,touch',
+  wheelSpeed: -1,
+  tolerance: 40,        // 弱い動きでは反応しない
+  debounce: true,       // ひと続きの操作では1度だけ発火
+  preventDefault: true,
+  ignoreCheck: wheelIgnore,
+  onUp:   self => { if (self.event && self.event.type === 'wheel') wheelGestureLocked = true; go(+1); },
+  onDown: self => { if (self.event && self.event.type === 'wheel') wheelGestureLocked = true; go(-1); },
+});
+// キーボード（矢印・PageUp/Down・Space）
+window.addEventListener('keydown', e => {
+  if (['ArrowDown','PageDown',' '].includes(e.key)){ e.preventDefault(); go(+1); }
+  else if (['ArrowUp','PageUp'].includes(e.key)){ e.preventDefault(); go(-1); }
+});
+
+/* ============================================================
+   リサイズ：遷移中なら完了後に再構築
+   ============================================================ */
+/* iOS Safari はスクロール操作でアドレスバーが出入りし、そのたびに画面の高さが
+   60〜100px ほど変わって resize が飛んでくる。毎回組み直すと背景が跳ねるので、
+   「横幅が変わった」「高さが大きく変わった」ときだけ組み直す。
+   3Dの描画サイズだけは毎回合わせる（こちらは動かしても見た目が跳ねない）。
+   ※ご指定は50pxでしたが、それだとiOSのツールバー分（60〜100px）で毎回跳ねるため、
+     それを確実に跨げる120pxにしています。50pxに戻すならこの数字を変えてください */
+const RESIZE_H_THRESHOLD = 120;
+let lastLayoutW = 0, lastLayoutH = 0;
+let resizeTimer = 0;
+
+function onResize(){
+  const vw = stage.clientWidth  || window.innerWidth;
+  const vh = stage.clientHeight || window.innerHeight;
+
+  resizeRenderer();          // キャンバスの解像度とカメラだけは常に合わせる
+  requestRender();
+
+  const 横が変わった = vw !== lastLayoutW;
+  const 縦が大きく変わった = Math.abs(vh - lastLayoutH) >= RESIZE_H_THRESHOLD;
+  if (!横が変わった && !縦が大きく変わった) return;   // アドレスバーの出入り程度は無視
+
+  lastLayoutW = vw; lastLayoutH = vh;
+  if (animating) needsRebuild = true; else rebuild();
+}
+
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(onResize, 150);
+});
+window.addEventListener('orientationchange', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(onResize, 250);   // 回転は描画が落ち着くまで少し待つ
+});
+
+/* ============================================================
+   初期化：背景画像・フォント・3Dモデルが揃ってからフェードイン
+   ============================================================ */
+/* 背景画像の準備待ち。
+   img.decode() はタブが裏にあるなど「描画が始まらない」状況だと
+   いつまでも終わらないことがあるので、必ず上限時間で打ち切る */
+const imgReady = img => Promise.race([
+  new Promise(res => {
+    const withDecode = () => (img.decode ? img.decode() : Promise.resolve()).catch(() => {}).then(res);
+    if (img.complete && img.naturalWidth) { withDecode(); return; }
+    img.addEventListener('load',  withDecode, { once:true });
+    img.addEventListener('error', res,        { once:true });
+  }),
+  new Promise(res => setTimeout(res, 3000)),
+]);
+const fontsReady = Promise.race([
+  (document.fonts && document.fonts.ready) || Promise.resolve(),
+  new Promise(r => setTimeout(r, 2500)),
+]);
+
+Promise.all([imgReady(bgImg), fontsReady, loadSheep()])
+  .then(() => {
+    rebuild();
+    ready = true;
+    gsap.to(stage, { autoAlpha:1, duration:REDUCED ? 0.01 : 0.7, ease:'power1.out' });
+  })
+  .catch(err => {
+    const detail = (err && (err.message || err.type)) ? String(err.message || err.type) : '原因不明';
+    showError('assets/sheep.glb を読み込めませんでした（' + detail + '）', err);
+  });
+
+// 動作確認用（コンソールから状態を見られるように）
+window.__sheep = { get stop(){ return current + 1; }, get fit(){ return fitInfo; },
+                   get angleDeg(){ return sheepGroup.rotation.y * 180 / Math.PI; },
+                   get frames(){ return frameCount; }, get bg(){ return bgInfo; },
+                   get transitions(){ return transitionCount; },
+                   get queued(){ return queued; }, get animating(){ return animating; },
+                   get pose(){ return { y:+sheepGroup.position.y.toFixed(4),
+                                        s:+sheepGroup.scale.x.toFixed(4),
+                                        tilt:+sheepGroup.rotation.x.toFixed(4) }; },
+                   get timelines(){ return tls; },
+                   get model(){ return modelRoot; }, get fitGroup(){ return fitGroup; },
+                   get orient(){ return { ...BASE_ORIENT }; },
+                   get three(){ return { THREE, scene, camera, renderer }; },
+                   render, go };
+</script>
+</body>
+</html>
