@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>露葉 ローションLP</title>
+<style>
+body{margin:0}
+/* Layout: fixed WebGL stage (glass bottle turning with scroll) + HTML copy panels; 5 snap stops, ingredient pearls orbit then sink into the bottle */
+:root{
+  --ink:#15302A; --sub:#3E4F49; --paper:#F7F9F7; --line:rgba(21,48,42,.14); --amber:#A96F25; --bg:#A7A28C;
+  --display:"Hiragino Mincho ProN","Yu Mincho","YuMincho","Noto Serif JP",serif;
+  --body:"Hiragino Sans","Yu Gothic","YuGothic","Noto Sans JP",system-ui,sans-serif;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html{scroll-snap-type:y proximity}
+html,body{background:var(--bg);color:var(--ink)}
+body{font-family:var(--body);line-height:1.8;overflow-x:hidden}
+.scrolly{position:relative;height:620vh}
+.snap{position:absolute;left:0;width:1px;height:1px;scroll-snap-align:start}
+.stage{position:sticky;top:0;height:100vh;height:100svh;overflow:hidden;background:radial-gradient(70% 60% at 50% 52%,#ADA894 0%,#A7A28C 55%,#999480 100%)}
+#gl{position:absolute;inset:0;width:100%;height:100%;display:block}
+.ov{position:absolute;inset:0;pointer-events:none}
+.intro{position:absolute;left:0;right:0;top:7vh;text-align:center;padding-inline:16px;transition:opacity .6s,transform .8s}
+.intro .eb{font-size:11px;letter-spacing:.4em;color:var(--sub)}
+.intro h1{font-family:var(--display);font-weight:600;font-size:clamp(46px,8vw,104px);letter-spacing:.3em;text-indent:.3em;margin:.05em 0 0;line-height:1.1}
+.intro .en{font-size:11px;letter-spacing:.6em;color:var(--sub)}
+.cue{position:absolute;left:50%;bottom:3.5vh;transform:translateX(-50%);font-size:10px;letter-spacing:.3em;color:var(--sub);text-align:center;transition:opacity .4s}
+.cue i{display:block;width:1px;height:36px;margin:6px auto 0;background:var(--ink);transform-origin:top;animation:cue 1.8s ease-in-out infinite}
+@keyframes cue{0%{transform:scaleY(0)}50%{transform:scaleY(1)}100%{transform:scaleY(1);opacity:0}}
+.gone{opacity:0!important;transform:translateY(-14px)}
+
+.chip{position:absolute;left:0;top:0;white-space:nowrap;text-align:center;will-change:transform,opacity;opacity:0}
+.chip .n{display:inline-block;font-size:13px;font-weight:600;background:rgba(247,249,247,.86);border:1px solid var(--line);border-radius:30px;padding:4px 12px;
+  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.chip .t{display:block;font-size:10px;color:var(--sub);letter-spacing:.08em;margin-top:2px}
+
+.panel{position:absolute;top:50%;width:min(380px,32vw);opacity:0;transform:translateY(-44%);transition:opacity .6s,transform .9s cubic-bezier(.2,.8,.2,1)}
+.panel.on{opacity:1;transform:translateY(-50%)}
+.panel.r{left:63%}.panel.l{left:6%}
+.panel .eb{font-size:11px;letter-spacing:.24em;color:var(--amber);font-weight:700}
+.panel .no{font-family:var(--display);font-size:56px;line-height:1;color:var(--ink);opacity:.14;display:block;margin-bottom:10px}
+.panel h2{word-break:keep-all;overflow-wrap:anywhere;font-family:var(--display);font-weight:600;font-size:clamp(22px,2.5vw,32px);line-height:1.55;margin:.4em 0 .5em;text-wrap:balance}
+.panel p{margin:0;font-size:14px;color:var(--sub)}
+.panel.fin{left:50%;top:auto;bottom:7vh;width:min(560px,90vw);text-align:center;transform:translate(-50%,16px)}
+.panel.fin.on{transform:translate(-50%,0)}
+.panel.fin h2{font-size:clamp(20px,2.2vw,28px);margin:.2em 0 .1em}
+
+.nav{position:absolute;right:20px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:12px;pointer-events:auto}
+.nav button{all:unset;cursor:pointer;display:flex;align-items:center;justify-content:flex-end;gap:10px;font-size:11px;color:var(--sub);letter-spacing:.08em}
+.nav button span{opacity:0;transition:opacity .3s}
+.nav button:hover span,.nav button.on span{opacity:1}
+.nav button i{width:7px;height:7px;border-radius:50%;background:var(--line);transition:transform .3s,background .3s}
+.nav button.on i{background:var(--ink);transform:scale(1.5)}
+.nav button:focus-visible i{outline:2px solid var(--amber);outline-offset:3px}
+.tag{position:absolute;left:18px;bottom:14px;font-size:10px;color:var(--sub);letter-spacing:.08em}
+
+@media (max-width:760px){
+  .panel,.panel.r,.panel.l{left:16px;right:16px;width:auto;top:auto;bottom:4.5svh;transform:translateY(16px);
+    background:rgba(247,249,247,.9);padding:14px 18px;border-radius:14px;border:1px solid var(--line);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+  .panel.on{transform:none}
+  .panel.fin{left:16px;transform:translateY(16px);width:auto}.panel.fin.on{transform:none}
+  .panel .no{display:none}
+  .panel h2{font-size:19px;margin:.25em 0 .25em}.panel p{font-size:12.5px;line-height:1.7}
+  .chip .n{font-size:11px;padding:3px 9px}.chip .t{font-size:9px}
+  .nav{right:8px}.nav button span{display:none}
+  .intro{top:5svh}
+  .tag{display:none}
+}
+
+.end{position:relative;padding:14vh 16px 10vh;background:var(--paper);scroll-snap-align:start}
+.end-in{max-width:960px;margin:0 auto;display:grid;grid-template-columns:1.1fr .9fr;gap:40px}
+@media (max-width:760px){.end-in{grid-template-columns:1fr}}
+.shot{display:block;width:100%;max-width:420px;height:auto;border-radius:14px;margin:0 0 28px}
+.end h3{font-family:var(--display);font-weight:600;font-size:clamp(24px,3vw,34px);margin:0 0 .6em;line-height:1.5}
+.spec{border-top:1px solid var(--line);margin:0}
+.spec div{display:grid;grid-template-columns:7em 1fr;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);font-size:13px}
+.spec dt{color:var(--sub)}.spec dd{margin:0;min-width:0}
+.growx{background:var(--ink);color:var(--paper);border-radius:16px;padding:28px;align-self:start}
+.growx .eb{font-size:11px;letter-spacing:.24em;opacity:.7}
+.growx h4{font-family:var(--display);font-weight:600;font-size:22px;margin:.4em 0;line-height:1.5}
+.growx p{font-size:13px;opacity:.85;margin:0 0 1em}
+.growx .ct{font-size:13px;border-top:1px solid rgba(247,249,247,.2);padding-top:12px;user-select:all}
+.note{max-width:960px;margin:40px auto 0;font-size:11px;color:var(--sub)}
+.nogl{position:absolute;inset:0;display:grid;place-items:center;font-size:13px;color:var(--sub);padding:16px;text-align:center}
+@media (prefers-reduced-motion:reduce){.panel,.intro{transition:none}.cue i{animation:none}}
+</style>
+</head>
+<body>
+
+<section class="scrolly" id="scrolly">
+  <div class="snap"></div><div class="snap"></div><div class="snap"></div><div class="snap"></div><div class="snap"></div>
+  <div class="stage" id="stage">
+    <canvas id="gl"></canvas>
+    <div class="ov">
+      <div class="intro" id="intro">
+        <div class="eb">BOTANICAL LOTION</div>
+        <h1>露葉</h1>
+        <div class="en">TSUYUHA</div>
+      </div>
+      <div id="chips"></div>
+
+      <div class="panel r" data-st="1">
+        <span class="no">01</span>
+        <div class="eb">植物エキス</div>
+        <h2>3つの植物エキスを、<br>ひとつのボトルに。</h2>
+        <p>ハトムギ種子エキス、ドクダミエキス、ユズ果実エキスを保湿成分として配合しました。</p>
+      </div>
+      <div class="panel l" data-st="2">
+        <span class="no">02</span>
+        <div class="eb">保湿成分</div>
+        <h2>肌にうるおいを与える、<br>3つの保湿成分。</h2>
+        <p>セラミドNP、ヒアルロン酸Na、グリセリン。洗顔後、手のひらに500円玉大を取ってなじませます。</p>
+      </div>
+      <div class="panel r" data-st="3">
+        <span class="no">03</span>
+        <div class="eb">処方</div>
+        <h2>入れていないものも、<br>きちんと書く。</h2>
+        <p>毎日使うものなので、香料・着色料・エタノールを使わない処方にしています。</p>
+      </div>
+      <div class="panel fin" data-st="4">
+        <div class="eb">TSUYUHA BOTANICAL LOTION　150mL</div>
+        <h2>洗顔のあと、手のひらでなじませる一本。</h2>
+      </div>
+
+      <nav class="nav" id="nav" aria-label="セクション">
+        <button type="button"><span>はじめに</span><i></i></button>
+        <button type="button"><span>植物エキス</span><i></i></button>
+        <button type="button"><span>保湿成分</span><i></i></button>
+        <button type="button"><span>処方</span><i></i></button>
+        <button type="button"><span>商品</span><i></i></button>
+      </nav>
+      <div class="cue" id="cue">SCROLL<i></i></div>
+      <div class="tag">架空ブランドのデモです｜Demo by GROWX</div>
+    </div>
+  </div>
+</section>
+
+<section class="end">
+  <div class="end-in">
+    <div>
+      <img class="shot" src="assets/photo.jpg" alt="露葉 ボタニカルローションのボトル正面と背面" width="720" height="1316">
+      <h3>露葉 ボタニカルローション</h3>
+      <dl class="spec">
+        <div><dt>品名</dt><dd>化粧水</dd></div>
+        <div><dt>内容量</dt><dd>150mL</dd></div>
+        <div><dt>使い方</dt><dd>洗顔後、適量を手のひらに取り、顔全体にやさしくなじませます。</dd></div>
+        <div><dt>全成分</dt><dd>水、グリセリン、BG、ハトムギ種子エキス、ドクダミエキス、ユズ果実エキス、セラミドNP、ヒアルロン酸Na、ペンチレングリコール、クエン酸Na、クエン酸</dd></div>
+      </dl>
+    </div>
+    <div class="growx">
+      <div class="eb">GROWX INTERACTIVE LP</div>
+      <h4>御社の商品で、この動きをつくれます。</h4>
+      <p>商品写真やパッケージデータから、スクロールで回る3Dボトルと成分の見せ方を制作します。サプリ・化粧品・OEMの商品紹介ページに。</p>
+      <div class="ct">株式会社GROWX　info@growx.co.jp</div>
+    </div>
+  </div>
+  <p class="note">※「露葉」は展示会用の架空ブランドです。実在の商品・成分表示ではありません。</p>
+</section>
+
+<script src="assets/three.min.js"></script>
+<script>
+(function(){
+var T=window.THREE,canvas=document.getElementById('gl'),stage=document.getElementById('stage');
+var renderer;
+try{renderer=new T.WebGLRenderer({canvas:canvas,antialias:true,alpha:true,powerPreference:'high-performance'})}catch(e){
+  stage.insertAdjacentHTML('beforeend','<div class="nogl">この端末では3D表示を利用できません。</div>');return}
+renderer.setClearColor(0x000000,0);renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+renderer.outputEncoding=T.sRGBEncoding;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.05;
+var scene=new T.Scene(),camera=new T.PerspectiveCamera(30,1,0.1,100);camera.position.set(0,0.7,10);camera.lookAt(0,0.45,0);
+var MIN="'Hiragino Mincho ProN','Yu Mincho','YuMincho','Noto Serif JP',serif",GO="'Hiragino Sans','Yu Gothic','YuGothic','Noto Sans JP',sans-serif";
+
+/* environment: soft studio made of emissive panels */
+(function(){var es=new T.Scene();es.background=new T.Color(0xc9d4ce);
+  function box(w,h,x,y,z,c){var m=new T.Mesh(new T.PlaneGeometry(w,h),new T.MeshBasicMaterial({color:new T.Color(c).multiplyScalar(3),side:T.DoubleSide}));m.position.set(x,y,z);m.lookAt(0,0,0);es.add(m)}
+  box(6,14,-8,2,4,0xffffff);box(3,14,8,1,2,0xf3fff8);box(14,4,0,9,0,0xffffff);box(10,6,0,-2,-9,0xdfe9e4);
+  var pm=new T.PMREMGenerator(renderer);scene.environment=pm.fromScene(es,0.04).texture})();
+var key=new T.DirectionalLight(0xffffff,1.1);key.position.set(-3,5,6);key.intensity=0.9;scene.add(key);
+
+/* backdrop gradient (seen through the glass) */
+var bgU={a:{value:new T.Color()},b:{value:new T.Color()}};
+var bg=new T.Mesh(new T.PlaneGeometry(60,34),new T.ShaderMaterial({uniforms:bgU,depthWrite:false,
+  vertexShader:'varying vec2 v;void main(){v=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+  fragmentShader:'uniform vec3 a;uniform vec3 b;varying vec2 v;void main(){float d=length((v-vec2(.5,.52))*vec2(1.6,1.));gl_FragColor=vec4(mix(a,b,smoothstep(0.,.55,d)),1.);}'}));
+bg.position.set(0,0.45,-8);
+var BG=[['#E4E3D6','#AEAC98'],['#EDE6D2','#C4B894'],['#E3EDEC','#A9C3C3'],['#EEEEE8','#C3C4B8'],['#E2E4D7','#A4A794']].map(function(p){return p.map(function(c){return new T.Color(c).convertSRGBToLinear()})});
+
+/* label texture: unwrapped from product photo */
+function labelTex(){var t=new T.TextureLoader().load('assets/label.jpg');t.encoding=T.sRGBEncoding;t.anisotropy=8;return t}
+/* bottle */
+var bottle=new T.Group(),inner=new T.Group();bottle.add(inner);scene.add(bottle);
+function lathe(pts,seg){return new T.LatheGeometry(pts.map(function(p){return new T.Vector2(p[0],p[1])}),seg||96)}
+/* bottle from product photo: glass + cap stay camera-fixed (lighting doesn't move), only the label turns */
+var PROF={"y": [0.01142, 0.02447, 0.03752, 0.05057, 0.06363, 0.07668, 0.08973, 0.10278, 0.11583, 0.12888, 0.14193, 0.15499, 0.16804, 0.18109, 0.19414, 0.20719, 0.22024, 0.23329, 0.24634, 0.2594, 0.27245, 0.2855, 0.29855, 0.3116, 0.32465, 0.3377, 0.35076, 0.36381, 0.37686, 0.38991, 0.40296, 0.41601, 0.42906, 0.44212, 0.45517, 0.46822, 0.48127, 0.49432, 0.50737, 0.52042, 0.53348, 0.54653, 0.55958, 0.57263, 0.58568, 0.59873, 0.61178, 0.62483, 0.63789, 0.65094, 0.66399, 0.67704, 0.69009, 0.70314, 0.71619, 0.72925, 0.7423, 0.75535, 0.7684, 0.78145, 0.7945, 0.80755, 0.82061, 0.83366, 0.84671, 0.85976, 0.87281, 0.88586, 0.89891, 0.91196, 0.92502, 0.93807, 0.95112, 0.96417, 0.97722, 0.99027, 1.00332, 1.01638, 1.02943, 1.04248, 1.05553, 1.06858, 1.08163, 1.09468, 1.10774, 1.12079, 1.13384, 1.14689, 1.15994, 1.17299, 1.18604, 1.1991, 1.21215, 1.2252, 1.23825, 1.2513, 1.26435, 1.2774, 1.29045, 1.30351, 1.31656, 1.32961, 1.34266, 1.35571, 1.36876, 1.38181, 1.39487, 1.40792, 1.42097, 1.43402, 1.44707, 1.46012, 1.47317, 1.48623, 1.49928, 1.51233, 1.52538, 1.53843, 1.55148, 1.56453, 1.57759, 1.59064, 1.60369, 1.61674, 1.62979, 1.64284, 1.65589, 1.66894, 1.682, 1.69505, 1.7081, 1.72115, 1.7342, 1.74725, 1.7603, 1.77336, 1.78641, 1.79946, 1.81251, 1.82556, 1.83861, 1.85166, 1.86472, 1.87777, 1.89082, 1.90387, 1.91692, 1.92997, 1.94302, 1.95608, 1.96913, 1.98218, 1.99523, 2.00828, 2.02133, 2.03438, 2.04743, 2.06049, 2.07354, 2.08659, 2.09964, 2.11269, 2.12574, 2.13879, 2.15185, 2.1649, 2.17795, 2.191, 2.20405, 2.2171, 2.23015, 2.24321, 2.25626, 2.26931, 2.28236, 2.29541, 2.30846, 2.32151, 2.33456, 2.34762, 2.36067, 2.37372, 2.38677, 2.39982, 2.41287, 2.42592, 2.43898, 2.45203, 2.46508, 2.47813, 2.49118, 2.50423, 2.51728, 2.53034, 2.54339, 2.55644, 2.56949, 2.58254, 2.59559, 2.60864, 2.6217, 2.63475, 2.6478, 2.66085, 2.6739, 2.68695, 2.7, 2.71305, 2.72611, 2.73916, 2.75221, 2.76526, 2.77831, 2.79136, 2.80441, 2.81747, 2.83052, 2.84357, 2.85662, 2.86967, 2.88272, 2.89577, 2.90883, 2.92188, 2.93493, 2.94798, 2.96103, 2.97408, 2.98713, 3.00019, 3.01324, 3.02629, 3.03934, 3.05239, 3.06544, 3.07849, 3.09154, 3.1046, 3.11765, 3.1307, 3.14375, 3.1568, 3.16985, 3.1829, 3.19596, 3.20901, 3.22206, 3.23511, 3.24816, 3.26121, 3.27426, 3.28732, 3.30037, 3.31342, 3.32647, 3.33952], "r": [0.23182, 0.31883, 0.36705, 0.40077, 0.43449, 0.44813, 0.45865, 0.46916, 0.47968, 0.4875, 0.4933, 0.4991, 0.5049, 0.5098, 0.51234, 0.51488, 0.51742, 0.51995, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.51978, 0.51945, 0.51913, 0.5188, 0.51847, 0.51718, 0.51578, 0.51438, 0.51213, 0.50923, 0.50633, 0.50343, 0.49964, 0.49348, 0.48732, 0.48116, 0.47499, 0.46812, 0.46123, 0.45434, 0.44746, 0.4371, 0.42514, 0.41318, 0.40121, 0.38925, 0.37728, 0.36324, 0.3491, 0.33454, 0.31589, 0.28856, 0.24941, 0.2245, 0.22213, 0.22539, 0.22865, 0.23386, 0.2392, 0.24444, 0.24946, 0.25448, 0.26119, 0.27532, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27868, 0.27782, 0.27344, 0.23801, 0.0], "ly0": 0.59784, "ly1": 1.85269},labelSpin=new T.Group();
+(function(){var pts=PROF.y.map(function(y,i){return new T.Vector2(Math.max(PROF.r[i],0.0001),y)});
+  var tl=new T.TextureLoader();function tx(src){var t=tl.load(src);t.encoding=T.sRGBEncoding;t.anisotropy=8;return t}
+  inner.add(new T.Mesh(new T.LatheGeometry(pts,256,-Math.PI/2,Math.PI*2),new T.MeshBasicMaterial({map:tx('assets/shell.jpg'),toneMapped:false})));
+  var LR=0.5212,LH=PROF.ly1-PROF.ly0,LY=(PROF.ly0+PROF.ly1)/2;
+  var lab=new T.Mesh(new T.CylinderGeometry(LR,LR,LH,256,1,true,-Math.PI/2,Math.PI*2),new T.MeshBasicMaterial({map:tx('assets/label.jpg'),toneMapped:false}));
+  lab.position.y=LY;labelSpin.add(lab);inner.add(labelSpin);
+  var shade=new T.Mesh(new T.CylinderGeometry(LR+0.0008,LR+0.0008,LH,256,1,true,-Math.PI/2,Math.PI*2),new T.MeshBasicMaterial({map:tx('assets/label-shade.jpg'),toneMapped:false,transparent:true,
+    blending:T.CustomBlending,blendEquation:T.AddEquation,blendSrc:T.DstColorFactor,blendDst:T.ZeroFactor,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-4,polygonOffsetUnits:-4}));
+  shade.position.y=LY;shade.renderOrder=3;inner.add(shade)})();
+inner.position.y=-1.4;
+
+/* contact shadow */
+var sc=document.createElement('canvas');sc.width=sc.height=256;var sg=sc.getContext('2d');var gr=sg.createRadialGradient(128,128,0,128,128,128);
+gr.addColorStop(0,'rgba(20,45,38,.55)');gr.addColorStop(1,'rgba(20,45,38,0)');sg.fillStyle=gr;sg.fillRect(0,0,256,256);
+var shadow=new T.Mesh(new T.PlaneGeometry(2.6,2.6),new T.MeshBasicMaterial({map:new T.CanvasTexture(sc),transparent:true,depthWrite:false}));
+shadow.rotation.x=-Math.PI/2;scene.add(shadow);
+
+/* ingredient pearls */
+var LAYERS=[
+  [['ハトムギ種子エキス','保湿成分','#C4A052'],['ドクダミエキス','保湿成分','#4E8A4A'],['ユズ果実エキス','保湿成分','#E7B814']],
+  [['セラミドNP','保湿成分','#E8CFA8'],['ヒアルロン酸Na','保湿成分','#6FB3DA'],['グリセリン','保湿成分','#BFD6E3']],
+  [['無香料','香料を使っていません','#FFFFFF'],['無着色','着色料を使っていません','#FFFFFF'],['アルコールフリー','エタノール不使用','#FFFFFF']]];
+var ANCH=[[-1.5,1.05,0.4],[1.45,0.25,0.5],[-1.3,-0.75,0.6]];
+var chipsEl=document.getElementById('chips'),pearls=[];
+LAYERS.forEach(function(L,li){L.forEach(function(d,k){
+  var m=new T.Mesh(new T.SphereGeometry(0.17,48,32),new T.MeshPhysicalMaterial({color:new T.Color(d[2]),roughness:0.28,clearcoat:1,clearcoatRoughness:0.08,envMapIntensity:0.6}));
+  var halo=new T.Mesh(new T.SphereGeometry(0.26,32,16),new T.MeshBasicMaterial({color:new T.Color(d[2]),transparent:true,opacity:0.12,depthWrite:false}));m.add(halo);
+  m.scale.setScalar(0.001);scene.add(m);
+  var el=document.createElement('div');el.className='chip';el.innerHTML='<span class="n">'+d[0]+'</span><span class="t">'+d[1]+'</span>';chipsEl.appendChild(el);
+  pearls.push({m:m,el:el,li:li,k:k,ph:Math.random()*6.28})})});
+
+/* scroll + stops */
+var scrolly=document.getElementById('scrolly'),snaps=[].slice.call(document.querySelectorAll('.snap'));
+var STOPS=[0,0.25,0.5,0.75,1];
+function layoutSnaps(){var tot=scrolly.offsetHeight-innerHeight;snaps.forEach(function(s,i){s.style.top=(STOPS[i]*tot)+'px'})}
+var navBtns=[].slice.call(document.querySelectorAll('#nav button'));
+navBtns.forEach(function(b,i){b.addEventListener('click',function(){var tot=scrolly.offsetHeight-innerHeight;scrollTo({top:scrolly.offsetTop+STOPS[i]*tot,behavior:'smooth'})})});
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function ss(t){t=clamp(t,0,1);return t*t*(3-2*t)}
+function keyf(p,V){for(var i=1;i<STOPS.length;i++){if(p<=STOPS[i]){var a=STOPS[i-1],b=STOPS[i];var k=ss((p-a)/(b-a));
+  // hold near stops, move between them
+  k=ss(clamp(((p-a)/(b-a)-0.2)/0.6,0,1));return V[i-1]+(V[i]-V[i-1])*k}}return V[V.length-1]}
+function target(){var r=scrolly.getBoundingClientRect(),tot=scrolly.offsetHeight-innerHeight;return tot>0?clamp(-r.top/tot,0,1):0}
+
+var W=0,H=0,mobile=false,halfW=4;
+function resize(){W=stage.clientWidth;H=stage.clientHeight;renderer.setSize(W,H,false);camera.aspect=W/H;camera.updateProjectionMatrix();
+  mobile=W<=760;halfW=Math.tan(15*Math.PI/180)*10*camera.aspect;layoutSnaps()}
+addEventListener('resize',resize);resize();
+
+var intro=document.getElementById('intro'),cue=document.getElementById('cue'),panels=[].slice.call(document.querySelectorAll('.panel'));
+var spin=0,spinV=0,cur=target(),prev=cur,lean=0,mx=0,my=0,tmx=0,tmy=0,stopIdx=-1,t0=performance.now();
+var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+addEventListener('pointermove',function(e){if(e.pointerType!=='mouse')return;tmx=e.clientX/innerWidth-.5;tmy=e.clientY/innerHeight-.5});
+var cA=new T.Color(),cB=new T.Color(),v3=new T.Vector3(),bc=new T.Vector3();
+
+function setStop(i){if(i===stopIdx)return;stopIdx=i;
+  panels.forEach(function(p){p.classList.toggle('on',+p.dataset.st===i)});
+  navBtns.forEach(function(b,k){b.classList.toggle('on',k===i)});
+  intro.classList.toggle('gone',i!==0);cue.classList.toggle('gone',i!==0)}
+
+function frame(now){
+  var time=(now-t0)/1000,tg=target();cur+=(tg-cur)*0.09;var vel=cur-prev;prev=cur;
+  lean+=(clamp(vel*600,-0.16,0.16)-lean)*0.06;mx+=(tmx-mx)*0.05;my+=(tmy-my)*0.05;
+  var drop=reduce?1:ss(time/1.6);
+  var sx=mobile?0:halfW*0.3,X=keyf(cur,[0,-1,1,-1,0])*sx,S=keyf(cur,[1.0,1.1,1.1,1.1,1.2])*(mobile?0.72:1),Y=(mobile?0.75:0)+keyf(cur,[-0.35,0,0,0,0.05]);
+  bottle.position.set(X,Y+(1-drop)*3.5+(reduce?0:Math.sin(time*1.1)*0.04),0);
+  bottle.scale.setScalar(S);
+  var tilt=keyf(cur,[0,-0.13,0.13,-0.11,0]);bottle.rotation.set(0,0,tilt+lean+(reduce?0:Math.sin(time*0.9)*0.015));
+  var spT=cur*Math.PI*4+(1-drop)*-3+(reduce?0:Math.sin(time*0.6)*0.12)+mx*0.5;
+  if(reduce){spin=spT}else{spinV+=(spT-spin)*0.06;spinV*=0.8;spin+=spinV}labelSpin.rotation.y=spin;
+  shadow.position.set(X,Y-1.4*S-0.01+(1-drop)*0,0);shadow.material.opacity=0.35+0.65*drop;shadow.scale.setScalar(S*(0.6+0.4*drop));
+
+  // backdrop color between stops
+  var f=cur*4,i0=Math.floor(clamp(f,0,3.999)),k=ss(f-i0);
+  cA.copy(BG[i0][0]).lerp(BG[i0+1][0],k);cB.copy(BG[i0][1]).lerp(BG[i0+1][1],k);bgU.a.value.copy(cA);bgU.b.value.copy(cB);
+
+  // pearls
+  bc.set(X,Y+0.1*S,0);
+  pearls.forEach(function(o){
+    var s=STOPS[o.li+1],ap=ss((cur-(s-0.14))/0.08),ab=ss((cur-(s+0.08))/0.08);
+    var a=ANCH[o.k],fl=reduce?0:Math.sin(time*1.3+o.ph)*0.07;
+    var ax=mobile?a[0]*Math.min(1,(halfW-0.3)/1.5):a[0];var px=X+ax*S,py=Y+a[1]*S+fl,pz=a[2];
+    var ex=bc.x+(px-bc.x)*(1-ab),ey=bc.y+(py-bc.y)*(1-ab)+ab*0.6*S*(1-ab)*4,ez=pz*(1-ab);
+    var sc2=ap*(1-ab*0.9)*S;o.m.visible=sc2>0.01;o.m.scale.setScalar(Math.max(sc2,0.001));o.m.position.set(ex+(1-ap)*a[0]*0.6,ey,ez);
+    var op=ap*(1-ss(ab*2.5));
+    if(op>0.01){v3.copy(o.m.position);v3.project(camera);var sx2=(v3.x*0.5+0.5)*W,sy2=(-v3.y*0.5+0.5)*H;
+      o.el.style.opacity=op;o.el.style.transform='translate('+sx2.toFixed(1)+'px,'+(sy2+22).toFixed(1)+'px) translateX('+(mobile?(a[0]>0?-80:-20):-50)+'%)'}
+    else o.el.style.opacity=0;
+  });
+
+  var si=0,best=9;STOPS.forEach(function(s,i){var d=Math.abs(cur-s);if(d<best){best=d;si=i}});setStop(best<0.09?si:(cur<0.05?0:-1));
+    renderer.render(scene,camera);requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
