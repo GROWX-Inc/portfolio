@@ -56,7 +56,7 @@ body{font-family:var(--body);line-height:1.8;overflow-x:hidden}
 .nav button:focus-visible i{outline:2px solid var(--amber);outline-offset:3px}
 .tag{position:absolute;left:18px;bottom:14px;font-size:10px;color:var(--sub);letter-spacing:.08em}
 
-@media (max-width:760px){
+@media (max-width:1024px),(max-aspect-ratio:11/10){
   .panel,.panel.r,.panel.l{left:16px;right:16px;width:auto;top:auto;bottom:4.5svh;transform:translateY(16px);
     background:rgba(247,249,247,.9);padding:14px 18px;border-radius:14px;border:1px solid var(--line);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
   .panel.on{transform:none}
@@ -239,7 +239,7 @@ function target(){var r=scrolly.getBoundingClientRect(),tot=scrolly.offsetHeight
 
 var W=0,H=0,mobile=false,halfW=4;
 function resize(){W=stage.clientWidth;H=stage.clientHeight;renderer.setSize(W,H,false);camera.aspect=W/H;camera.updateProjectionMatrix();
-  mobile=W<=760;halfW=Math.tan(15*Math.PI/180)*10*camera.aspect;layoutSnaps()}
+  mobile=W<=1024||W/H<1.1;halfW=Math.tan(15*Math.PI/180)*10*camera.aspect;layoutSnaps()}
 addEventListener('resize',resize);resize();
 
 var intro=document.getElementById('intro'),cue=document.getElementById('cue'),panels=[].slice.call(document.querySelectorAll('.panel'));
