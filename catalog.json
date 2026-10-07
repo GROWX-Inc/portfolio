@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "updated": "2026-10-07",
+  "note": "名刺営業AI が営業メールの「制作例」に載せるデモの一覧。usable=false は載せない。any=true は業種を問わない候補。追加は1件＝1要素を足すだけ（README「営業メール用カタログ」）",
+  "demos": [
+    { "id": "01", "name": "ポータルズーム", "url": "https://growx-inc.github.io/portfolio/01/", "keywords": [], "any": true, "highlight": "画面を進めると、森の奥へ吸い込まれていくような演出をご覧いただけます", "usable": true },
+    { "id": "02", "name": "抹茶ドリンクLP", "url": "https://growx-inc.github.io/portfolio/02/", "keywords": ["飲料", "食品", "飲食"], "any": false, "highlight": "画面を進めるたびに、文字や背景が鮮やかに切り替わる演出をご覧いただけます", "usable": true },
+    { "id": "03", "name": "LUMIÈRE 美容クリニック", "url": "https://growx-inc.github.io/portfolio/03/", "keywords": ["美容"], "any": false, "highlight": "", "usable": false, "unusableReason": "除外業種（美容・化粧品）と重なる" },
+    { "id": "04", "name": "Bespoke Architecture Studio（円筒スクリーン型カルーセル）", "url": "https://growx-inc.github.io/portfolio/04/", "keywords": ["建築", "設計", "住宅"], "any": false, "highlight": "作品写真が円を描くように並び、ぐるりと見渡せる演出をご覧いただけます", "usable": false, "unusableReason": "2026-10-07 の表示確認で、公開ページの文言が美容クリニック（LUMIÈRE Beauty Clinic）だったため保留。建築向けの文言に戻すか、使用を豪太さんが判断したら true にする" },
+    { "id": "05", "name": "A Quiet Escape", "url": "https://growx-inc.github.io/portfolio/05/", "keywords": ["観光", "宿泊"], "any": false, "highlight": "マウスを動かすと、水面に波紋が広がる演出をご覧いただけます", "usable": true },
+    { "id": "06", "name": "ORBIT", "url": "https://growx-inc.github.io/portfolio/06/", "keywords": ["自動車", "製品"], "any": false, "highlight": "マウスの動きに合わせて、商品写真が浮かび上がる演出をご覧いただけます", "usable": true },
+    { "id": "07", "name": "Aura", "url": "https://growx-inc.github.io/portfolio/07/", "keywords": ["IT", "サービス", "SaaS"], "any": false, "highlight": "映画のような演出で、サービスの魅力をお伝えする構成をご覧いただけます", "usable": true },
+    { "id": "08", "name": "Aethera", "url": "https://growx-inc.github.io/portfolio/08/", "keywords": ["造園", "不動産"], "any": false, "highlight": "動画の背景で、空間の広がりを感じていただける構成をご覧いただけます", "usable": true },
+    { "id": "09", "name": "羊3DモデルLP", "url": "https://growx-inc.github.io/portfolio/09/", "keywords": ["製造", "商品"], "any": false, "highlight": "立体の商品が、画面の動きに合わせて回転する演出をご覧いただけます", "usable": true },
+    { "id": "10", "name": "露葉 ボタニカルローションLP", "url": "https://growx-inc.github.io/portfolio/10/", "keywords": ["化粧品"], "any": false, "highlight": "", "usable": false, "unusableReason": "除外業種（美容・化粧品）と重なる" },
+    { "id": "mymonsters", "name": "MY MONSTERS", "url": "https://www.growx.co.jp/mymonsters/", "keywords": [], "any": true, "highlight": "スクロールに合わせて動く演出をご覧いただけます", "usable": true }
+  ]
+}

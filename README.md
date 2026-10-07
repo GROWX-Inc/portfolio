@@ -28,3 +28,18 @@ LP案件（`lp-test-links`）やスキル保管（`skills-library`）とは分�
 4. 公開作業の最後に、Claudeがこの台帳（作品名・内容・作者・作成日・URL）を必ず更新する
 5. 修正ログ自動記録（Make）の対象外なので、PRは不要。直接コミットでよい
 6. 画像・動画はGitHub Pagesの制約上、1ファイル25MB未満・合計1GB未満に収める
+
+## 営業メール用カタログ（catalog.json）
+
+名刺営業AI が営業メールの「制作例」に載せるデモの一覧です。公開URL：https://growx-inc.github.io/portfolio/catalog.json
+
+- 名刺営業AI は、この一覧から先方の業種に合うデモを1件選び、本文に URL を載せます（合うものが無ければ `any: true` のデモから選ぶ）
+- 本文に載せてよいのは `usable: true` のデモだけです（それ以外の URL は名刺営業AI が要確認で止めます）
+
+### デモを増やすとき（1行足すだけ）
+1. 作品フォルダを公開し、`https://growx-inc.github.io/portfolio/NN/` が表示されることを確認する
+2. `catalog.json` の `demos` に1要素を足す：
+   `{ "id": "NN", "name": "作品名", "url": "https://growx-inc.github.io/portfolio/NN/", "keywords": ["合う業種", "…"], "any": false, "highlight": "〜な演出をご覧いただけます", "usable": true }`
+   - `highlight` はメールに書く見どころの1文（専門用語を使わない。豪太さんが確認した文言）
+   - 除外業種（美容・化粧品など）と重なるデモは `usable: false` と `unusableReason` を書く
+3. コミットして push する（名刺営業AI は10分以内に新しい一覧を読み込む。読めないときはデプロイ時の控えを使う）
