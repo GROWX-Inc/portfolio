@@ -1,0 +1,1439 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="KIRIGO — 架空アパレルブランドのECサイトデモ。ハンガーラックに掛かった11着が3Dで動き、1着ずつ360°回転・ズームで見られます。">
+<meta name="robots" content="noindex">
+</head>
+<body>
+<title>KIRIGO Rail Store</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: a wall-mounted chrome rail rendered in WebGL fills the first screen; garments are
+   volumetric meshes built from their front/back photos. Hover turns one to face you, click pulls
+   it forward over a blurred rail, the product sheet keeps the same 3D garment in its gallery. */
+:root{
+  --bg:#FFFFFF;
+  --bg-2:#F2F2F0;
+  --surface:#F7F7F5;
+  --ink:#17191A;
+  --ink-2:#5B625E;
+  --line:#D9DBD7;
+  --accent:#3C4FA0;
+  --accent-ink:#FFFFFF;
+  --shadow:rgba(23,25,26,.18);
+  --err:#B4332B;
+  --f-display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --f-body:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --gut:clamp(16px,4vw,40px);
+}
+/* dark mode disabled: the site is white throughout (client decision) */
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{overflow-x:hidden}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.7;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+button:focus-visible,a:focus-visible,summary:focus-visible,.stage3d:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+.mono{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+
+#gl{position:fixed;left:0;top:0;width:100%;height:100%;z-index:2;pointer-events:none;display:block}
+body.fitting #gl{z-index:55}
+
+/* header */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:40;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+  padding-block:14px;padding-inline:var(--gut);background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.top .left{display:flex;gap:18px;align-items:center}
+.top .right{display:flex;justify-content:flex-end}
+.wordmark{display:flex;align-items:center;gap:9px;font-family:var(--f-display);font-weight:800;font-stretch:125%;font-size:19px;letter-spacing:.06em}
+.wordmark svg{width:20px;height:14px}
+.navbtn{display:flex;align-items:center;gap:8px}
+.navbtn .bars{display:grid;gap:4px}.navbtn .bars i{display:block;width:16px;height:1.5px;background:var(--ink)}
+.cartbtn{display:flex;align-items:center;gap:8px}
+.cartbtn .count{min-width:20px;height:20px;border-radius:10px;background:var(--ink);color:var(--bg);font-family:var(--f-mono);font-size:11px;display:grid;place-items:center;padding:0 6px}
+.cartbtn.bump .count{animation:bump .5s}
+@keyframes bump{40%{transform:scale(1.35)}}
+.menu{position:absolute;top:calc(100% + 6px);left:var(--gut);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px;display:grid;min-width:250px;box-shadow:0 12px 30px var(--shadow)}
+.menu button{text-align:left;padding:8px 10px;border-radius:5px;font-size:13px;display:flex;justify-content:space-between;gap:16px}
+.menu button:hover{background:var(--bg-2)}
+.menu .p{font-family:var(--f-mono);font-size:11px;color:var(--ink-2)}
+
+/* rack stage */
+.hero{padding-block:22px 8px}
+.railhead{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;padding-inline:var(--gut);color:var(--ink-2)}
+.railhead h1{margin:0;font-family:var(--f-display);font-stretch:62%;font-weight:700;font-size:clamp(34px,6vw,64px);line-height:.95;color:var(--ink);text-transform:uppercase}
+.stage3d{position:relative;height:clamp(440px,64svh,760px);margin-top:4px;touch-action:pan-y;cursor:default;outline:none}
+.stage3d.pointing{cursor:pointer}
+.loader{position:absolute;inset:0;display:grid;place-items:center;align-content:center;gap:10px;color:var(--ink-2);text-align:center;padding-inline:var(--gut)}
+.loader .track{width:180px;height:2px;background:var(--line);border-radius:2px;overflow:hidden}
+.loader .track i{display:block;height:100%;width:0;background:var(--ink);transition:width .2s}
+.caption{padding-inline:var(--gut);display:flex;justify-content:center;gap:14px;align-items:baseline;min-height:44px;text-align:center;flex-wrap:wrap}
+.caption .nm{font-family:var(--f-display);font-weight:700;font-size:15px;letter-spacing:.04em;text-transform:uppercase}
+.caption .hint{color:var(--ink-2)}
+
+.sectlabel{padding-inline:var(--gut);max-width:1200px;margin:40px auto 0;display:flex;justify-content:space-between;border-top:1px solid var(--line);padding-top:14px;color:var(--ink-2)}
+.lineup{padding-inline:var(--gut);margin:18px auto 0;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:20px 16px;max-width:1200px}
+.card{text-align:left;display:grid;gap:6px}
+.card .ph{background:var(--bg-2);border-radius:6px;aspect-ratio:4/5;display:grid;place-items:center;overflow:hidden;max-width:100%}
+.card .ph img{width:86%;transition:transform .5s}
+.card:hover .ph img{transform:translateY(-4px)}
+.card .t{font-size:13px;font-weight:500;line-height:1.4}
+.card .p{font-family:var(--f-mono);font-size:12px;color:var(--ink-2)}
+
+/* focus view (canvas draws the blurred rail + garment underneath this UI) */
+.fit{position:fixed;inset:0;z-index:60;display:grid;grid-template-rows:auto 1fr auto;opacity:0;transition:opacity .35s;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.fit.show{opacity:1}
+.fit .bar2{display:flex;justify-content:space-between;align-items:center;padding:16px var(--gut)}
+.fit .view{min-height:0;touch-action:none;cursor:grab}
+.fit .view:active{cursor:grabbing}
+.fit .foot{display:grid;justify-items:center;gap:10px;padding:8px var(--gut) 22px;text-align:center}
+.zoomctl{position:absolute;right:var(--gut);top:50%;transform:translateY(-50%);display:grid;gap:6px;z-index:2}
+.zoomctl button{width:40px;height:40px;border-radius:999px;border:1px solid var(--line);background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:blur(6px);font-family:var(--f-mono);font-size:16px;display:grid;place-items:center}
+.zoomctl button:hover{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.zoomctl button[disabled]{opacity:.35;pointer-events:none}
+.fit .view.zoomed{cursor:move}
+.fit .foot{transition:opacity .3s}
+.fit.zoomed .foot{opacity:.18;pointer-events:none}   /* the close-up may cover the caption; keep it from competing */
+.fit .ttl{font-family:var(--f-display);font-weight:700;font-stretch:80%;font-size:clamp(22px,3.4vw,30px);text-transform:uppercase;letter-spacing:.02em;line-height:1.1}
+.seg{display:inline-flex;border:1px solid var(--ink);border-radius:999px;padding:3px;background:color-mix(in srgb,var(--bg) 70%,transparent)}
+.seg button{padding:5px 16px;border-radius:999px;font-family:var(--f-mono);font-size:11px;letter-spacing:.1em}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 22px;border-radius:999px;background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:14px}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.x{display:inline-flex;align-items:center;gap:8px}
+
+/* product sheet */
+.pdp{max-width:1180px;margin-inline:auto;padding-inline:var(--gut);padding-block:22px 56px}
+.back{display:inline-flex;gap:8px;align-items:center;color:var(--ink-2)}
+.pgrid{margin-top:18px;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:clamp(20px,4vw,56px)}
+@media (max-width:760px){.pgrid{grid-template-columns:1fr}}
+.gal{display:grid;gap:12px;align-content:start}
+.gal .main{position:relative;border-radius:10px;aspect-ratio:1/1;max-width:100%;touch-action:pan-y;cursor:grab;
+  background:radial-gradient(120% 90% at 50% 35%,var(--surface),var(--bg-2))}
+.gal .main .flat{position:absolute;inset:4%;width:92%;height:92%;object-fit:contain}
+.gal .main .tag{position:absolute;left:12px;bottom:10px;color:var(--ink-2)}
+.thumbs{display:flex;gap:10px}
+.thumbs button{width:76px;height:76px;border-radius:6px;background:var(--surface);border:1px solid transparent;display:grid;place-items:center}
+.thumbs button[aria-pressed="true"]{border-color:var(--ink)}
+.thumbs img{height:64px;width:auto;max-width:100%}
+.info{min-width:0;display:grid;gap:16px;align-content:start}
+.info h2{margin:0;font-family:var(--f-display);font-weight:700;font-stretch:75%;font-size:clamp(28px,4vw,42px);line-height:1.02;text-transform:uppercase;text-wrap:balance}
+.price{font-family:var(--f-mono);font-size:18px}
+.price small{font-size:11px;color:var(--ink-2);margin-left:6px}
+.desc{margin:0;max-width:60ch}
+.spec{display:grid;grid-template-columns:auto 1fr;gap:4px 18px;margin:0;font-size:13px}
+.spec dt{color:var(--ink-2)}.spec dd{margin:0}
+.field{display:grid;gap:8px}
+.field .lab{display:flex;justify-content:space-between;align-items:baseline}
+.sizes{display:flex;gap:8px;flex-wrap:wrap}
+.sizes button{min-width:52px;padding:10px 0;border:1px solid var(--line);border-radius:6px;font-family:var(--f-mono);font-size:13px;background:var(--surface)}
+.sizes button[aria-pressed="true"]{border-color:var(--ink);background:var(--ink);color:var(--bg)}
+.sizes button[data-out]{color:var(--ink-2);text-decoration:line-through;cursor:not-allowed;opacity:.6}
+.err{color:var(--err);font-size:13px;min-height:1.2em}
+.buy{display:flex;gap:10px;align-items:stretch;flex-wrap:wrap}
+.qty{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:999px;background:var(--surface)}
+.qty button{width:40px;height:44px;font-size:18px}
+.qty output{min-width:28px;text-align:center;font-family:var(--f-mono)}
+.buy .btn{flex:1;min-width:180px}
+.note{background:var(--surface);border-radius:8px;padding:14px 16px;font-size:13px;color:var(--ink-2);display:grid;gap:4px}
+.note b{color:var(--ink);font-weight:500}
+details{border-top:1px solid var(--line);padding-top:10px}
+summary{cursor:pointer;font-weight:500;list-style:none;display:flex;justify-content:space-between}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";font-family:var(--f-mono)}
+details[open] summary::after{content:"−"}
+.tbl{overflow-x:auto;margin-top:10px}
+table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{font-weight:500;color:var(--ink-2)}
+
+/* toast + cart */
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translate(-50%,160%);z-index:70;
+  width:min(560px,calc(100vw - 32px));display:flex;gap:12px;align-items:center;justify-content:space-between;
+  background:var(--ink);color:var(--bg);border-radius:10px;padding:12px 12px 12px 16px;box-shadow:0 12px 30px var(--shadow);transition:transform .45s cubic-bezier(.2,.8,.2,1)}
+.toast.show{transform:translate(-50%,0)}
+.toast .msg{font-size:13px;line-height:1.5;min-width:0}
+.toast .btn{padding:8px 14px;font-size:12px;white-space:nowrap}
+.scrim{position:fixed;inset:0;z-index:80;background:rgba(10,12,11,.35)}
+.drawer{position:fixed;top:0;right:0;bottom:0;z-index:81;width:min(420px,100vw);background:var(--bg);display:grid;grid-template-rows:auto 1fr auto;
+  transform:translateX(100%);transition:transform .4s cubic-bezier(.2,.8,.2,1);box-shadow:-10px 0 40px var(--shadow);
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.drawer.show{transform:none}
+.drawer header{display:flex;justify-content:space-between;align-items:center;padding:18px 20px;border-bottom:1px solid var(--line)}
+.drawer h3{margin:0;font-family:var(--f-display);font-stretch:90%;font-size:18px;text-transform:uppercase;letter-spacing:.04em}
+.lines{overflow-y:auto;padding:8px 20px;display:grid;align-content:start}
+.line{display:grid;grid-template-columns:64px 1fr auto;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);align-items:center}
+.line .ph{width:64px;height:64px;background:var(--surface);border-radius:6px;display:grid;place-items:center}
+.line .ph img{height:56px;width:auto;max-width:100%}
+.line .t{font-size:13px;font-weight:500;line-height:1.4}
+.line .m{font-family:var(--f-mono);font-size:11px;color:var(--ink-2)}
+.line .rm{font-size:12px;color:var(--ink-2);text-decoration:underline}
+.empty{padding:40px 0;color:var(--ink-2);text-align:center}
+.drawer footer{padding:16px 20px;border-top:1px solid var(--line);display:grid;gap:10px}
+.sum{display:flex;justify-content:space-between;font-family:var(--f-mono)}
+.demo{font-size:12px;color:var(--ink-2)}
+.sitefoot{max-width:1200px;margin:56px auto 0;padding:18px var(--gut) 32px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;color:var(--ink-2);font-size:12px}
+
+/* ================= site sections ================= */
+.wrap{max-width:1200px;margin:0 auto;padding-inline:var(--gut)}
+.navlinks{display:flex;gap:22px;font-family:var(--f-mono);font-size:12px;letter-spacing:.04em;text-transform:uppercase}
+.navlinks a{color:var(--ink-2);text-decoration:none;padding:4px 0;border-bottom:1px solid transparent}
+.navlinks a:hover{color:var(--ink);border-color:var(--ink)}
+.menu .grp{font-family:var(--f-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);padding:10px 10px 4px}
+.menu .grp+.grp{border-top:1px solid var(--line);margin-top:6px}
+.menu .cols{display:grid;grid-template-columns:1fr 1fr;column-gap:8px}
+.sect{margin-top:96px}
+.sect .head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:16px}
+.sect h2{margin:0;font-family:var(--f-display);font-stretch:62%;font-weight:700;font-size:clamp(30px,4.6vw,48px);line-height:.95;text-transform:uppercase}
+.sect .head .mono{color:var(--ink-2)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
+.chips button{padding:7px 14px;border-radius:999px;border:1px solid var(--line);font-family:var(--f-mono);font-size:12px;color:var(--ink-2)}
+.chips button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.lineup{margin-top:22px}
+/* lookbook */
+.looks{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:22px}
+.look{position:relative;display:grid;gap:12px;text-align:left}
+.look .pic{position:relative;aspect-ratio:3/4;border-radius:8px;overflow:hidden;background:var(--lk,#EEEDE8);display:grid;place-items:end center}
+.look .pic img{width:84%;position:absolute;bottom:-4%;left:2%;transition:transform .6s}
+.look .pic img.b{left:auto;right:-16%;width:62%;bottom:-8%;opacity:.95;filter:brightness(.97)}
+.look:hover .pic img{transform:translateY(-8px)}
+.look .pic .no{position:absolute;top:14px;left:16px;font-family:var(--f-mono);font-size:11px;color:var(--ink-2)}
+.look .cap{display:grid;gap:3px}
+.look .cap b{font-size:14px}
+.look .cap span{font-size:13px;color:var(--ink-2);line-height:1.6}
+.look:nth-child(1){--lk:#ECEAE3}.look:nth-child(2){--lk:#E3E7E6}.look:nth-child(3){--lk:#EDE6E3}
+/* about */
+.about{display:grid;grid-template-columns:1.1fr .9fr;gap:40px;margin-top:28px;align-items:start}
+.about .lead{font-family:var(--f-display);font-stretch:70%;font-weight:600;font-size:clamp(24px,3vw,36px);line-height:1.25;margin:0}
+.about p{margin:14px 0 0;color:var(--ink-2);line-height:1.9;max-width:52ch}
+.vals{display:grid;gap:0;border-top:1px solid var(--line)}
+.vals>div{display:grid;grid-template-columns:38px 1fr;gap:14px;padding:16px 0;border-bottom:1px solid var(--line)}
+.vals .n{font-family:var(--f-mono);font-size:12px;color:var(--ink-2);padding-top:3px}
+.vals b{display:block;font-size:15px;margin-bottom:4px}
+.vals span{font-size:13px;color:var(--ink-2);line-height:1.7}
+.facts{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:40px;border-top:1px solid var(--line);padding-top:16px}
+.facts div{display:grid;gap:4px}.facts .k{font-family:var(--f-mono);font-size:11px;color:var(--ink-2);text-transform:uppercase;letter-spacing:.06em}.facts .v{font-family:var(--f-display);font-stretch:70%;font-weight:700;font-size:22px}
+/* journal */
+.posts{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:22px}
+.post{display:grid;gap:10px;text-align:left;padding:18px;border:1px solid var(--line);border-radius:8px;min-height:230px;align-content:start}
+.post:hover{background:var(--surface)}
+.post .d{font-family:var(--f-mono);font-size:11px;color:var(--ink-2)}
+.post b{font-size:16px;line-height:1.45}
+.post span{font-size:13px;color:var(--ink-2);line-height:1.75}
+.post .more{margin-top:auto;font-family:var(--f-mono);font-size:11px;text-decoration:underline}
+/* stores */
+.stores{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:22px}
+.store{border:1px solid var(--line);border-radius:8px;padding:20px;display:grid;gap:6px}
+.store.flag{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.store .tag{font-family:var(--f-mono);font-size:11px;opacity:.7;text-transform:uppercase;letter-spacing:.06em}
+.store b{font-size:18px}
+.store span{font-size:13px;opacity:.8;line-height:1.7}
+.stockists{margin-top:16px;border-top:1px solid var(--line)}
+.stockists div{display:grid;grid-template-columns:90px 1fr auto;gap:14px;padding:12px 0;border-bottom:1px solid var(--line);font-size:13px}
+.stockists .c{font-family:var(--f-mono);color:var(--ink-2)}
+/* newsletter */
+.news{margin-top:96px;background:var(--surface);border-radius:12px;padding:40px var(--gut);display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:center}
+.news h2{margin:0;font-family:var(--f-display);font-stretch:62%;font-weight:700;font-size:clamp(26px,3.6vw,40px);line-height:1;text-transform:uppercase}
+.news p{margin:8px 0 0;font-size:13px;color:var(--ink-2)}
+.news form{display:flex;gap:8px}
+.news input{flex:1;min-width:0;padding:12px 14px;border:1px solid var(--line);border-radius:999px;background:var(--bg);color:var(--ink);font:inherit;font-size:14px}
+.news input:focus{outline:2px solid var(--accent);outline-offset:2px}
+/* footer */
+.sitefoot{display:grid;grid-template-columns:1.4fr repeat(4,1fr);gap:28px;margin-top:80px;padding-top:36px;font-size:13px;color:var(--ink)}
+.sitefoot .brand{display:grid;gap:10px;align-content:start}
+.sitefoot .brand .wordmark{font-size:18px}
+.sitefoot .brand p{margin:0;color:var(--ink-2);font-size:12px;line-height:1.8;max-width:34ch}
+.sitefoot .col{display:grid;gap:8px;align-content:start}
+.sitefoot .col .h{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);margin-bottom:4px}
+.sitefoot .col a{color:var(--ink);text-decoration:none;font-size:13px;cursor:pointer}
+.sitefoot .col a:hover{text-decoration:underline}
+.sitefoot .legal{grid-column:1/-1;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:16px;margin-top:8px;font-size:12px;color:var(--ink-2)}
+/* info pages */
+.page{max-width:760px;margin:0 auto;padding:40px var(--gut) 80px}
+.page h2{font-family:var(--f-display);font-stretch:62%;font-weight:700;font-size:clamp(32px,5vw,52px);line-height:.95;text-transform:uppercase;margin:16px 0 8px}
+.page .sub{color:var(--ink-2);font-size:13px;margin-bottom:28px}
+.page h3{font-size:16px;margin:32px 0 8px}
+.page p,.page li{color:var(--ink-2);line-height:1.9;font-size:14px}
+.page ul{padding-left:18px}
+.page table{width:100%;border-collapse:collapse;font-size:13px}
+.page th,.page td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line)}
+.page th{font-family:var(--f-mono);font-weight:400;color:var(--ink-2);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.page .form{display:grid;gap:12px;margin-top:16px}
+.page .form label{display:grid;gap:6px;font-size:13px}
+.page .form input,.page .form textarea,.page .form select{padding:11px 12px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit;font-size:14px}
+.page .form textarea{min-height:120px;resize:vertical}
+.page .form .btn{justify-self:start}
+@media (max-width:900px){
+  .navlinks{display:none}
+  .looks,.posts{grid-template-columns:1fr 1fr}
+  .about{grid-template-columns:1fr}
+  .facts{grid-template-columns:1fr 1fr}
+  .sitefoot{grid-template-columns:1fr 1fr}
+  .sitefoot .brand{grid-column:1/-1}
+  .news{grid-template-columns:1fr}
+}
+@media (max-width:640px){
+  .looks,.posts,.stores{grid-template-columns:1fr}
+  .look .pic{aspect-ratio:4/5}
+  .sect{margin-top:64px}
+  .news form{flex-direction:column}
+  .news input{width:100%}
+  .sitefoot{grid-template-columns:1fr 1fr}
+}
+
+@media (max-width:640px){
+  .stage3d{height:clamp(420px,60svh,620px)}
+  .top{padding-block:12px}
+  .wordmark{font-size:16px}
+  .navbtn span.mono,.cartbtn span.lbl{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition-duration:.01s!important;animation:none!important}}
+</style>
+
+<header class="top" id="top">
+  <div class="left">
+    <button class="navbtn" id="menuBtn" aria-expanded="false" aria-controls="menu"><span class="bars"><i></i><i></i><i></i></span><span class="mono">Menu</span></button>
+    <nav class="navlinks" aria-label="サイト内">
+      <a href="#shop" data-go="shop">Shop</a><a href="#lookbook" data-go="lookbook">Lookbook</a><a href="#about" data-go="about">About</a><a href="#journal" data-go="journal">Journal</a><a href="#stores" data-go="stores">Stores</a>
+    </nav>
+  </div>
+  <button class="wordmark" id="home" aria-label="KIRIGO ラックに戻る">
+    <svg viewBox="0 0 20 14" aria-hidden="true"><rect x="0" y="1" width="20" height="2" rx="1" fill="currentColor"/><rect x="3" y="6" width="14" height="2" rx="1" fill="currentColor"/><rect x="6" y="11" width="8" height="2" rx="1" fill="currentColor"/></svg>
+    KIRIGO
+  </button>
+  <div class="right">
+    <button class="cartbtn" id="cartBtn" aria-label="カートを開く"><span class="mono lbl">Cart</span><span class="count" id="count">0</span></button>
+  </div>
+  <div class="menu" id="menu" hidden></div>
+</header>
+
+<main id="rackView">
+  <section class="hero" aria-label="ハンガーラック">
+    <div class="railhead">
+      <h1>On the Rail</h1>
+      <span class="mono">AW26 · 11 pieces · Tokyo</span>
+    </div>
+    <div class="stage3d" id="stage" tabindex="0" aria-label="ハンガーラック。左右キーで服を選び、Enterで開きます">
+      <div class="loader" id="loader"><span class="mono" id="loadMsg">ラックに服を掛けています</span><span class="track"><i id="loadBar"></i></span></div>
+    </div>
+    <div class="caption" aria-live="polite">
+      <span class="nm" id="capName">Kirigo AW26</span>
+      <span class="mono hint" id="capHint"></span>
+    </div>
+  </section>
+  <section class="sect wrap" id="shop" aria-labelledby="shopH">
+    <div class="head"><h2 id="shopH">All pieces</h2><span class="mono" id="allCount"></span></div>
+    <div class="chips" id="chips" role="group" aria-label="カテゴリで絞り込む">
+      <button data-cat="" aria-pressed="true">すべて</button><button data-cat="T-shirt" aria-pressed="false">Tシャツ</button><button data-cat="Sweat" aria-pressed="false">スウェット</button><button data-cat="Outer" aria-pressed="false">アウター</button><button data-cat="Shirt" aria-pressed="false">シャツ</button><button data-cat="Knit" aria-pressed="false">ニット</button>
+    </div>
+    <div class="lineup" id="lineup" style="padding-inline:0"></div>
+  </section>
+
+  <section class="sect wrap" id="lookbook" aria-labelledby="lookH">
+    <div class="head"><h2 id="lookH">Lookbook</h2><span class="mono">AW26 · 3 looks</span></div>
+    <div class="looks" id="looks"></div>
+  </section>
+
+  <section class="sect wrap" id="about" aria-labelledby="aboutH">
+    <div class="head"><h2 id="aboutH">About Kirigo</h2><span class="mono">Est. 2024 · Tokyo</span></div>
+    <div class="about">
+      <div>
+        <p class="lead">毎日着る服を、10年先まで着られる作りで。</p>
+        <p>KIRIGO は東京・神宮前の小さなアトリエから始まったウェアブランドです。流行の形を追うのではなく、肩の落ち方、袖のゆとり、生地の目付けといった「着ている時間の心地よさ」を一着ずつ決めています。</p>
+        <p>生地は国内の機屋と共同で開発し、縫製は和歌山と岡山の工場で行っています。色は毎シーズン入れ替えますが、型は変えずに育てていく。それが KIRIGO の考え方です。</p>
+      </div>
+      <div class="vals">
+        <div><span class="n">01</span><div><b>素材から決める</b><span>裏毛は12oz、天竺は7.4oz。厚みと落ち感を先に決めてから、型を引きます。</span></div></div>
+        <div><span class="n">02</span><div><b>国内縫製</b><span>和歌山・岡山の2工場で縫製。縫い代の始末まで検品項目に入れています。</span></div></div>
+        <div><span class="n">03</span><div><b>修理して着る</b><span>袖口のリブ交換、ボタン付け替えは無償。穴あきの補修も実費でお受けします。</span></div></div>
+      </div>
+    </div>
+    <div class="facts">
+      <div><span class="k">Pieces / season</span><span class="v">11</span></div>
+      <div><span class="k">Made in</span><span class="v">Japan</span></div>
+      <div><span class="k">Repair</span><span class="v">無償（リブ・ボタン）</span></div>
+      <div><span class="k">Atelier</span><span class="v">Jingumae, Tokyo</span></div>
+    </div>
+  </section>
+
+  <section class="sect wrap" id="journal" aria-labelledby="journalH">
+    <div class="head"><h2 id="journalH">Journal</h2><span class="mono">Notes from the atelier</span></div>
+    <div class="posts" id="posts"></div>
+  </section>
+
+  <section class="sect wrap" id="stores" aria-labelledby="storesH">
+    <div class="head"><h2 id="storesH">Stores</h2><span class="mono">Flagship + stockists</span></div>
+    <div class="stores">
+      <div class="store flag"><span class="tag">Flagship</span><b>KIRIGO 神宮前</b><span>東京都渋谷区神宮前 5-XX-X 1F<br>12:00–20:00 · 水曜定休<br>全11型を試着できます。お直しの受付もこちらで。</span></div>
+      <div class="store"><span class="tag">Online</span><b>kirigo.example（このサイト）</b><span>全型・全サイズを取り扱い。11,000円（税込）以上で送料無料。<br>到着後14日以内は未使用品に限り返品可。</span></div>
+    </div>
+    <div class="stockists">
+      <div><span class="c">Osaka</span><span>SOUTH STORE 南船場</span><span class="c">Tee / Sweat</span></div>
+      <div><span class="c">Nagoya</span><span>FOLD 大須</span><span class="c">Outer</span></div>
+      <div><span class="c">Fukuoka</span><span>ROOMS 今泉</span><span class="c">All</span></div>
+      <div><span class="c">Sapporo</span><span>NORTH SUPPLY 円山</span><span class="c">Sweat / Knit</span></div>
+    </div>
+  </section>
+
+  <section class="news wrap" aria-labelledby="newsH">
+    <div><h2 id="newsH">Newsletter</h2><p>新作の入荷、再入荷、アトリエからの手紙をお送りします。月1〜2通。いつでも解除できます。</p></div>
+    <form id="newsForm"><input type="email" placeholder="メールアドレス" aria-label="メールアドレス" required><button class="btn" type="submit">登録する</button></form>
+  </section>
+</main>
+
+<main id="pdpView" hidden></main>
+<main id="pageView" hidden></main>
+
+<footer class="sitefoot wrap">
+  <div class="brand">
+    <span class="wordmark"><svg viewBox="0 0 20 14" aria-hidden="true" style="width:20px;height:14px"><rect x="0" y="1" width="20" height="2" rx="1" fill="currentColor"/><rect x="3" y="6" width="14" height="2" rx="1" fill="currentColor"/><rect x="6" y="11" width="8" height="2" rx="1" fill="currentColor"/></svg>KIRIGO</span>
+    <p>東京・神宮前のアトリエで型を引き、国内の工場で縫う、毎日のためのウェア。</p>
+  </div>
+  <div class="col"><span class="h">Shop</span><a data-go="shop">All pieces</a><a data-go="lookbook">Lookbook</a><a data-cat="T-shirt">Tシャツ</a><a data-cat="Sweat">スウェット</a><a data-cat="Outer">アウター</a></div>
+  <div class="col"><span class="h">Help</span><a data-page="shipping">配送と返品</a><a data-page="size">サイズガイド</a><a data-page="repair">お直しについて</a><a data-page="contact">お問い合わせ</a></div>
+  <div class="col"><span class="h">Company</span><a data-go="about">About</a><a data-go="journal">Journal</a><a data-go="stores">Stores</a><a data-page="company">会社概要</a></div>
+  <div class="col"><span class="h">Legal</span><a data-page="terms">利用規約</a><a data-page="privacy">プライバシー</a><a data-page="law">特定商取引法に基づく表記</a></div>
+  <div class="legal"><span>© 2026 KIRIGO — 架空のブランドです。商品・価格・在庫・店舗はすべてデモ用の例です。</span><span class="mono">Demo build · no checkout</span></div>
+</footer>
+
+<canvas id="gl" aria-hidden="true"></canvas>
+
+<div class="fit" id="fit" hidden role="dialog" aria-modal="true" aria-labelledby="fitTitle">
+  <div class="bar2">
+    <span class="mono" id="fitIdx"></span>
+    <button class="x mono" id="fitClose">Close <span aria-hidden="true">✕</span></button>
+  </div>
+  <div class="view" id="fitView">
+    <div class="zoomctl" aria-label="拡大・縮小">
+      <button id="zoomIn" aria-label="拡大">＋</button>
+      <button id="zoomOut" aria-label="縮小">−</button>
+      <button id="zoomReset" aria-label="元の大きさに戻す" style="font-size:11px">1:1</button>
+    </div>
+  </div>
+  <div class="foot">
+    <div class="ttl" id="fitTitle"></div>
+    <div class="mono" style="color:var(--ink-2)" id="fitMeta"></div>
+    <div class="seg" role="group" aria-label="表示する面">
+      <button id="segF" aria-pressed="true">FRONT</button><button id="segB" aria-pressed="false">BACK</button>
+    </div>
+    <div class="row"><button class="btn" id="fitGo">商品ページを見る</button></div>
+    <div class="mono" style="color:var(--ink-2)" id="fitHint">ドラッグで傾ける · 大きく振ると裏返る</div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite">
+  <span class="msg" id="toastMsg"></span>
+  <button class="btn" id="toastCart">カートを見る</button>
+</div>
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" aria-label="カート" aria-hidden="true">
+  <header><h3>Cart</h3><button class="x mono" id="drawerClose">Close <span aria-hidden="true">✕</span></button></header>
+  <div class="lines" id="lines"></div>
+  <footer>
+    <div class="sum"><span>小計</span><span id="subtotal">¥0</span></div>
+    <button class="btn" disabled>購入手続きへ</button>
+    <span class="demo">デモサイトのため、決済画面には進みません。</span>
+  </footer>
+</aside>
+
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from "three";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+
+/* ================= data ================= */
+const SIZE_TEE=[["S",70,54,22],["M",72,57,23],["L",74,60,24],["XL",76,63,25]];
+const SIZE_SWT=[["S",66,58,56],["M",68,61,57],["L",70,64,58],["XL",72,67,59]];
+const SIZE_JKT=[["S",69,56,60],["M",71,59,61],["L",73,62,62],["XL",75,65,63]];
+const P=[
+ {id:"tee-white",name:"Mist Logo Tee",color:"オフホワイト",price:7700,cat:"T-shirt",th:.8,mat:"コットン100%（8.0oz 天竺）",size:SIZE_TEE,cut:"ドロップショルダー / ゆったり",out:[],
+  desc:"左胸に小さく KIRIGO の刺繍を入れた厚手のTシャツ。首まわりのリブは詰まり気味で、洗っても伸びにくい仕様です。"},
+ {id:"cardigan",name:"Cable Knit Cardigan",color:"クリーム",price:22000,cat:"Knit",th:1.35,mat:"ウール70% / ナイロン30%",size:SIZE_SWT,cut:"オーバーサイズ / ローゲージ",out:["S"],
+  desc:"太い縄編みを前後に走らせたローゲージのカーディガン。べっ甲調の大きめボタンで、Tシャツの上にざっくり羽織れます。"},
+ {id:"crew-pink",name:"Dusty Crew Sweat",color:"ダスティピンク",price:12100,cat:"Sweat",th:1.05,mat:"コットン100%（裏毛）",size:SIZE_SWT,cut:"ドロップショルダー",out:[],
+  desc:"くすんだピンクに後染めした裏毛のクルーネック。無地なので、デニムにもスラックスにも合わせやすい一枚です。"},
+ {id:"tee-grey",name:"Heather Box Tee",color:"ヘザーグレー",price:6600,cat:"T-shirt",th:.8,mat:"コットン90% / ポリエステル10%",size:SIZE_TEE,cut:"ボックスシルエット",out:["XL"],
+  desc:"杢グレーの無地Tシャツ。身幅を広く、着丈を短めにとったボックス型で、一枚でも重ね着でも形が決まります。"},
+ {id:"zip-green",name:"Forest Zip Hoodie",color:"フォレストグリーン",price:16500,cat:"Sweat",th:1.2,mat:"コットン80% / ポリエステル20%（裏起毛）",size:SIZE_SWT,cut:"ドロップショルダー",out:[],
+  desc:"深い緑のフルジップパーカー。胸元にはトーンを合わせたラバーパッチだけを付け、ロゴは控えめにしています。"},
+ {id:"coach-olive",name:"Coach Jacket",color:"オリーブ",price:19800,cat:"Jacket",th:1.1,mat:"ナイロン100%（裏地 ポリエステル）",size:SIZE_JKT,cut:"レギュラー / スナップ前開き",out:[],
+  desc:"リブ襟を付けたナイロンのコーチジャケット。裾のドローコードで丈感を調整できます。小雨程度なら弾く撥水加工付き。"},
+ {id:"jacket-sand",name:"Canvas Work Jacket",color:"サンド",price:24200,cat:"Jacket",th:1.25,mat:"コットン100%（10oz キャンバス）/ 襟 コーデュロイ",size:SIZE_JKT,cut:"レギュラー / 4ポケット",out:["M"],
+  desc:"硬めのキャンバス地に、茶のコーデュロイ襟を合わせたワークジャケット。着込むほど生地がなじんでいきます。"},
+ {id:"ls-navy",name:"Everyday Long Sleeve",color:"ネイビー",price:8800,cat:"T-shirt",th:.85,mat:"コットン100%（6.2oz 天竺）",size:SIZE_JKT,cut:"レギュラー",out:[],
+  desc:"毎日着られることを目標にした無地のロングスリーブ。袖口はリブ仕様で、まくっても落ちてきません。"},
+ {id:"hoodie-char",name:"Logo Pullover Hoodie",color:"チャコール",price:15400,cat:"Sweat",th:1.2,mat:"コットン100%（裏毛 12oz）",size:SIZE_SWT,cut:"ドロップショルダー",out:[],
+  desc:"左胸に白の KIRIGO ロゴをプリントしたプルオーバーパーカー。フードは二枚仕立てで、かぶったときに形が崩れません。"},
+ {id:"jersey",name:"Kirigo Script Jersey",color:"ブラック",price:14300,cat:"Shirt",th:.85,mat:"ポリエステル100%（メッシュ）",size:SIZE_TEE,cut:"レギュラー / ボタン前開き",out:[],
+  desc:"胸に筆記体の Kirigo を刺繍したベースボールシャツ。白のパイピングが前立てと袖口を縁取ります。"},
+ {id:"racing",name:"Circuit Mesh Jersey",color:"ブラック",price:16500,cat:"Shirt",th:.85,mat:"ポリエステル100%（メッシュ）",size:SIZE_TEE,cut:"オーバーサイズ / ボタン前開き",out:["S"],
+  desc:"レーシングチームのピットシャツから着想したメッシュのベースボールシャツ。胸のワッペンとプリントは前面だけに集め、背面は肩の「79」とパイピングだけで仕上げました。"}
+];
+const yen=n=>"¥"+n.toLocaleString("ja-JP");
+const img=(p,s)=>`assets/img/${p.id}-${s}.webp`;      // photos with hanger (2D: list, thumbs, cart)
+const tex=(p,s)=>`assets/tex/${p.id}-${s}.webp`;      // 3D shells on the rail: centred on the hanger, one shared hook
+const texnh=(p,s)=>`assets/texnh/${p.id}-${s}.webp`;  // focus view / product page: hook and hanger cut out
+const $=id=>document.getElementById(id);
+const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+const canHover=()=>matchMedia("(hover:hover)").matches;
+
+/* ================= renderer ================= */
+const canvas=$("gl");
+let renderer=null;
+try{
+  renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true,powerPreference:"high-performance"});
+}catch(e){ renderer=null; }
+const GW=1, GH=1326/1024, HOOK_Y=0.036;      // garment image in world units; rail passes through the hook
+const SPACING=0.40, REST=-1.0, N=P.length;   // rest angle ≈ 57°: mostly front visible, side seam stays on the outline
+
+function cssColor(name){ return new THREE.Color().setStyle(getComputedStyle(document.documentElement).getPropertyValue(name).trim()||"#E6E8E5"); }
+
+/* ---------- garment mesh from a cut-out photo ----------
+   The silhouette (alpha) is turned into a distance field; the surface is lifted off the
+   garment plane with a rounded profile so edges taper to zero and the body has volume.
+   Fine wrinkles shaded into the photo add a little relief. Front faces +z, back faces -z. */
+function heightField(im, th, ext, noHanger){
+  const NX=160, NY=Math.round(NX*GH), cell=GW/NX;
+  const cv=document.createElement("canvas"); cv.width=NX; cv.height=NY;
+  const cx=cv.getContext("2d",{willReadFrequently:true}); cx.drawImage(im,0,0,NX,NY);
+  const d=cx.getImageData(0,0,NX,NY).data, n=NX*NY;
+  const A=new Float32Array(n), L=new Float32Array(n), D=new Float32Array(n);
+  for(let i=0;i<n;i++){A[i]=d[i*4+3]/255; L[i]=(0.2126*d[i*4]+0.7152*d[i*4+1]+0.0722*d[i*4+2])/255; D[i]=A[i]>0.5?1e9:0;}
+  const at=(x,y)=>(x<0||y<0||x>=NX||y>=NY)?0:D[y*NX+x];
+  for(let y=0;y<NY;y++)for(let x=0;x<NX;x++){const i=y*NX+x; if(!D[i])continue;
+    D[i]=Math.min(D[i],at(x-1,y)+1,at(x,y-1)+1,at(x-1,y-1)+1.4142,at(x+1,y-1)+1.4142);}
+  for(let y=NY-1;y>=0;y--)for(let x=NX-1;x>=0;x--){const i=y*NX+x; if(!D[i])continue;
+    D[i]=Math.min(D[i],at(x+1,y)+1,at(x,y+1)+1,at(x+1,y+1)+1.4142,at(x-1,y+1)+1.4142);}
+  let dmax=1; for(let i=0;i<n;i++) if(D[i]>dmax) dmax=D[i];
+  // blurred luminance for wrinkle relief
+  const Lb=new Float32Array(n), r=3;
+  for(let y=0;y<NY;y++)for(let x=0;x<NX;x++){let s=0,c=0;for(let j=-r;j<=r;j++)for(let k=-r;k<=r;k++){const xx=x+k,yy=y+j;if(xx<0||yy<0||xx>=NX||yy>=NY)continue;s+=L[yy*NX+xx];c++;}Lb[y*NX+x]=s/c;}
+  const Z=new Float32Array(n), R=0.075;
+  // with side photos: each row's front (or back) depth is measured from the side outline, and the
+  // cross-section across the row is an ellipse that reaches that depth at the row's thickest point
+  const dRow=new Float32Array(NY);
+  if(ext) for(let y=0;y<NY;y++){ let m=1; for(let x=0;x<NX;x++) m=Math.max(m,D[y*NX+x]); dRow[y]=m; }
+  for(let i=0;i<n;i++){
+    if(D[i]<=0){Z[i]=-0.003;continue;}
+    if(ext){
+      const y=(i/NX)|0, t=Math.min(1,Math.max(0,D[i]-1)/Math.max(1,dRow[y]-1));
+      const du=Math.max(0,D[i]-1)*cell;
+      Z[i]=ext[y]*Math.sqrt(1-(1-t)*(1-t))+0.006*(L[i]-Lb[i])*Math.min(du/0.03,1);
+      continue;
+    }
+    const du=Math.max(0,D[i]-1)*cell, t=Math.min(du/R,1);
+    const circ=1-(1-t)*(1-t);          // finite slope at the edge: no cliff on the first cell
+    const dome=Math.pow(Math.max(0,D[i]-1)/(dmax-1),0.8);
+    const wr=(L[i]-Lb[i])*Math.min(du/0.03,1);
+    Z[i]=th*(0.040*circ+0.030*dome)+0.010*wr;
+  }
+  // soften the chamfer steps
+  const Z2=new Float32Array(n);
+  for(let y=0;y<NY;y++)for(let x=0;x<NX;x++){const i=y*NX+x; if(D[i]<=0){Z2[i]=Z[i];continue;} let s=0,c=0;
+    for(let j=-1;j<=1;j++)for(let k=-1;k<=1;k++){const xx=x+k,yy=y+j;if(xx<0||yy<0||xx>=NX||yy>=NY)continue;s+=Z[yy*NX+xx];c++;} Z2[i]=s/c;}
+  // the hanger and hook are rigid: keep them a thin board / wire, and let the cloth thickness ease back
+  // in over ~30px around them (a hard cap here showed up as stair-steps along the wood)
+  const WOOD=[[452,125],[572,125],[646,224],[644,258],[624,260],[512,188],[400,260],[380,258],[378,224]];
+  const inPoly=(x,y,pts)=>{let c=false;for(let i=0,j=pts.length-1;i<pts.length;j=i++){const [xi,yi]=pts[i],[xj,yj]=pts[j];
+    if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi)) c=!c;} return c;};
+  const segD=(px,py,ax,ay,bx,by)=>{const dx=bx-ax,dy=by-ay,t=Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/(dx*dx+dy*dy)));return Math.hypot(ax+t*dx-px,ay+t*dy-py);};
+  const polyD=(px,py,pts)=>{let m=1e9;for(let i=0,j=pts.length-1;i<pts.length;j=i++) m=Math.min(m,segD(px,py,pts[j][0],pts[j][1],pts[i][0],pts[i][1])); return inPoly(px,py,pts)?-m:m;};
+  if(!noHanger){
+  // flatten only what is really hanger: wood-coloured cells inside the hanger outline and grey wire cells
+  // up top. Cloth that covers the hanger (a raised hood) keeps its thickness. Thickness eases back in with
+  // distance from those cells, so there is no step.
+  const cellPx=1024/NX, isW=new Uint8Array(n), isH=new Uint8Array(n);
+  for(let y=0;y<NY;y++)for(let x=0;x<NX;x++){
+    const i=y*NX+x; if(A[i]<0.3) continue;
+    const r=d[i*4]/255,g=d[i*4+1]/255,b=d[i*4+2]/255, mx=Math.max(r,g,b), mn=Math.min(r,g,b), sat=mx?(mx-mn)/mx:0;
+    let hue=0; if(mx>mn){ if(mx===r) hue=60*(((g-b)/(mx-mn))%6); else if(mx===g) hue=60*((b-r)/(mx-mn)+2); else hue=60*((r-g)/(mx-mn)+4); } if(hue<0) hue+=360;
+    const px=(x+.5)*cellPx, py=(y+.5)/NY*1326;
+    if(inPoly(px,py,WOOD) && hue>=16&&hue<=44&&sat>=0.12&&sat<=0.55&&mx>=0.58) isW[i]=1;
+    if((py<126||(py<140&&Math.abs(px-512)<34)) && sat<0.32&&mx<0.76) isH[i]=1;
+  }
+  const dist=(seed)=>{ const Q=new Float32Array(n); for(let i=0;i<n;i++) Q[i]=seed[i]?0:1e9;
+    const q=(x,y)=>(x<0||y<0||x>=NX||y>=NY)?1e9:Q[y*NX+x];
+    for(let y=0;y<NY;y++)for(let x=0;x<NX;x++){const i=y*NX+x; if(!Q[i])continue; Q[i]=Math.min(Q[i],q(x-1,y)+1,q(x,y-1)+1,q(x-1,y-1)+1.4142,q(x+1,y-1)+1.4142);}
+    for(let y=NY-1;y>=0;y--)for(let x=NX-1;x>=0;x--){const i=y*NX+x; if(!Q[i])continue; Q[i]=Math.min(Q[i],q(x+1,y)+1,q(x,y+1)+1,q(x+1,y+1)+1.4142,q(x-1,y+1)+1.4142);}
+    return Q; };
+  const DW=dist(isW), DH=dist(isH);
+  for(let i=0;i<n;i++){
+    if(D[i]<=0) continue;
+    Z2[i]=Math.min(Z2[i], 0.007+DW[i]*cellPx*0.0011, 0.0012+DH[i]*cellPx*0.0011);
+  }
+  }
+  return {NX,NY,A,Z:Z2};
+}
+/* per-row front/back depth (world units) from the two side photos. sR: garment front faces right,
+   so screen x = +z; sL: front faces left, screen x = -z. Both share the front photo's frame. */
+function sideExtents(imR, imL, NY){
+  const NXs=320, F=new Float32Array(NY), B=new Float32Array(NY);
+  const read=(im)=>{ const c=document.createElement("canvas"); c.width=NXs; c.height=NY; const x=c.getContext("2d",{willReadFrequently:true}); x.drawImage(im,0,0,NXs,NY); return x.getImageData(0,0,NXs,NY).data; };
+  const R=read(imR), L=read(imL);
+  const span=(d,y)=>{ let lo=-1,hi=-1; for(let x=0;x<NXs;x++){ if(d[(y*NXs+x)*4+3]>128){ if(lo<0) lo=x; hi=x; } } return lo<0?null:[(lo+.5)/NXs-.5,(hi+.5)/NXs-.5]; };
+  for(let y=0;y<NY;y++){
+    const r=span(R,y), l=span(L,y); let f=0,b=0,c=0;
+    if(r){ f+=r[1]; b+=-r[0]; c++; }
+    if(l){ f+=-l[0]; b+=l[1]; c++; }
+    if(c){ F[y]=Math.max(0,f/c); B[y]=Math.max(0,b/c); }
+  }
+  const sm=(A)=>{ const o=new Float32Array(NY); for(let y=0;y<NY;y++){ let s=0,c=0; for(let k=-3;k<=3;k++){ const yy=y+k; if(yy<0||yy>=NY) continue; s+=A[yy]; c++; } o[y]=s/c; } return o; };
+  return {F:sm(F),B:sm(B)};
+}
+function surfaceGeometry(hf, side){
+  const {NX,NY,A,Z}=hf, n=NX*NY;
+  const pos=new Float32Array(n*3), uv=new Float32Array(n*2);
+  for(let y=0;y<NY;y++)for(let x=0;x<NX;x++){
+    const i=y*NX+x, u=(x+.5)/NX, v=(y+.5)/NY;
+    pos[i*3]=(u-.5)*GW*side; pos[i*3+1]=HOOK_Y-v*GH; pos[i*3+2]=Z[i]*side;
+    uv[i*2]=u; uv[i*2+1]=1-v;
+  }
+  // keep one extra ring of cells around the outline so no opaque texel is ever trimmed away
+  const Ad=new Float32Array(n);
+  for(let y=0;y<NY;y++)for(let x=0;x<NX;x++){let m=0;for(let j=-1;j<=1;j++)for(let k=-1;k<=1;k++){const xx=x+k,yy=y+j;if(xx<0||yy<0||xx>=NX||yy>=NY)continue;m=Math.max(m,A[yy*NX+xx]);}Ad[y*NX+x]=m;}
+  const idx=[];
+  for(let y=0;y<NY-1;y++)for(let x=0;x<NX-1;x++){
+    const a=y*NX+x,b=a+1,c=a+NX,d=c+1;
+    if(Ad[a]<.02&&Ad[b]<.02&&Ad[c]<.02&&Ad[d]<.02) continue;
+    idx.push(a,c,b,b,c,d);
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute("position",new THREE.BufferAttribute(pos,3));
+  g.setAttribute("uv",new THREE.BufferAttribute(uv,2));
+  g.setIndex(idx); g.computeVertexNormals(); g.computeBoundingSphere();
+  return g;
+}
+const LIGHT_DIR=new THREE.Vector3(0.38,0.5,1).normalize();
+const VERT=`varying vec2 vUv; varying vec3 vN; varying vec3 vW; varying vec3 vMP; varying vec3 vMN;
+void main(){ vUv=uv; vMP=position; vMN=normal; vec4 w=modelMatrix*vec4(position,1.0); vW=w.xyz; vN=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*w; }`;
+const FRAG=`uniform sampler2D map; uniform sampler2D mapR; uniform sampler2D mapL; uniform float uSides; uniform float uShell;
+uniform vec3 uLight; uniform float uDim;
+varying vec2 vUv; varying vec3 vN; varying vec3 vW; varying vec3 vMP; varying vec3 vMN;
+void main(){
+  vec4 t=texture2D(map,vUv);
+  // alpha-to-coverage sharpening: keep the cut-out edge one screen pixel wide
+  float a=clamp((t.a-0.5)/max(fwidth(t.a),0.0001)+0.5,0.0,1.0);
+  vec3 base=t.rgb;
+  if(uSides>0.5){
+    // each surface point takes its colour from the photo that saw it most directly:
+    // own photo (front or back) for faces looking along z, side photos for faces looking along x
+    vec3 m=normalize(vMN); if(!gl_FrontFacing) m=-m;
+    vec4 sr=texture2D(mapR,vec2(0.5+vMP.z,vUv.y));
+    vec4 sl=texture2D(mapL,vec2(0.5-vMP.z,vUv.y));
+    float wO=pow(max(m.z*uShell,0.0),3.0)+0.0001;
+    float wRn=pow(max(-m.x,0.0),3.0), wLn=pow(max(m.x,0.0),3.0);
+    float wR=wRn*smoothstep(0.3,0.9,sr.a), wL=wLn*smoothstep(0.3,0.9,sl.a);
+    base=(t.rgb*wO+sr.rgb*wR+sl.rgb*wL)/(wO+wR+wL);
+    // where the side photo is the one in use, it also decides what is solid: the front/back
+    // cut-out edge runs right down the middle of a side view and would otherwise show through
+    float wS=wRn+wLn, aS=(wRn*sr.a+wLn*sl.a)/max(wS,0.0001);
+    float k=smoothstep(0.35,0.75,wS/(wO+wS));
+    a=mix(a,max(a,smoothstep(0.35,0.65,aS)),k);
+  }
+  if(a<0.01) discard;
+  vec3 N=normalize(vN); if(!gl_FrontFacing) N=-N;
+  vec3 V=normalize(cameraPosition-vW);
+  float h=dot(N,uLight)*0.5+0.5;
+  float ref=dot(vec3(0.0,0.0,1.0),uLight)*0.5+0.5;
+  float shade=(0.52+0.58*h)/(0.52+0.58*ref);
+  float f=pow(1.0-clamp(dot(N,V),0.0,1.0),2.5);
+  shade*=1.0-0.30*f;
+  gl_FragColor=vec4(base*shade*uDim,a);
+  #include <colorspace_fragment>
+}`;
+function garmentMaterial(tex, shell, sR, sL){
+  const m=new THREE.ShaderMaterial({uniforms:{map:{value:tex},mapR:{value:sR||tex},mapL:{value:sL||tex},uSides:{value:sR?1:0},uShell:{value:shell},
+    uLight:{value:LIGHT_DIR},uDim:{value:1}},vertexShader:VERT,fragmentShader:FRAG});
+  m.alphaToCoverage=true;
+  return m;
+}
+
+/* ================= scenes ================= */
+let rackScene,pdpScene,fitScene,cam,pdpCam,envTex,shadowPlane,keyLight;
+const items=[];       // rack garments
+const assets=[];      // per product: {front:{geo,mat,depth}, back:{...}}
+function makeTexture(im){
+  const t=new THREE.Texture(im); t.flipY=true; t.colorSpace=THREE.SRGBColorSpace; t.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  t.generateMipmaps=true; t.minFilter=THREE.LinearMipmapLinearFilter; t.needsUpdate=true; return t;
+}
+function garmentGroup(a, castShadow){
+  const g=new THREE.Group(); g.rotation.order="ZXY";
+  for(const s of [a.front,a.back]){
+    const m=new THREE.Mesh(s.geo,s.mat); m.castShadow=castShadow; m.customDepthMaterial=s.depth; g.add(m);
+  }
+  return g;
+}
+function buildRail(scene,len){
+  const metal=new THREE.MeshStandardMaterial({color:0xDADDDF,metalness:.9,roughness:.28,envMap:envTex,envMapIntensity:1.1});
+  const bar=new THREE.Mesh(new THREE.CylinderGeometry(.013,.013,len,32),metal); bar.rotation.z=Math.PI/2; bar.castShadow=true; scene.add(bar);
+  for(const sx of [-1,1]){
+    const cap=new THREE.Mesh(new THREE.SphereGeometry(.02,24,16),metal); cap.position.set(sx*len/2,0,0); scene.add(cap);
+    const arm=new THREE.Mesh(new THREE.CylinderGeometry(.009,.009,.5,20),metal); arm.rotation.x=Math.PI/2; arm.position.set(sx*len/2,0,-.25); arm.castShadow=true; scene.add(arm);
+    const plate=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,.012,32),metal); plate.rotation.x=Math.PI/2; plate.position.set(sx*len/2,0,-.5); scene.add(plate);
+  }
+}
+function setupScenes(){
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.outputColorSpace=THREE.SRGBColorSpace;
+  renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  renderer.setClearColor(0x000000,0);
+  const pm=new THREE.PMREMGenerator(renderer); envTex=pm.fromScene(new RoomEnvironment(),0.04).texture;
+
+  rackScene=new THREE.Scene();
+  keyLight=new THREE.DirectionalLight(0xffffff,1); keyLight.position.set(1.6,2.4,4.2); keyLight.target.position.set(0,-.6,0);
+  keyLight.castShadow=true; keyLight.shadow.mapSize.set(1536,1536);
+  Object.assign(keyLight.shadow.camera,{left:-3.4,right:3.4,top:1.4,bottom:-2.2,near:1,far:10}); keyLight.shadow.bias=-0.0008; keyLight.shadow.normalBias=0.01;
+  rackScene.add(keyLight,keyLight.target);
+  shadowPlane=new THREE.Mesh(new THREE.PlaneGeometry(14,6),new THREE.ShadowMaterial({opacity:.15}));
+  shadowPlane.position.set(0,-.9,-.5); shadowPlane.receiveShadow=true; rackScene.add(shadowPlane);
+  buildRail(rackScene,N*SPACING+.62);
+
+  fitScene=new THREE.Scene(); fitScene.environment=envTex;
+  const fl=new THREE.DirectionalLight(0xffffff,1.1); fl.position.set(1.4,2.2,4); fitScene.add(fl);
+  pdpScene=new THREE.Scene(); pdpScene.environment=envTex;
+  const pl=new THREE.DirectionalLight(0xffffff,1); pl.position.set(1.4,2.2,4); pl.target.position.set(0,-.6,0);
+  pl.castShadow=true; pl.shadow.mapSize.set(1024,1024); Object.assign(pl.shadow.camera,{left:-1.2,right:1.2,top:.6,bottom:-1.8,near:1,far:10}); pl.shadow.bias=-0.0008;
+  pdpScene.add(pl,pl.target);
+  const pshadow=new THREE.Mesh(new THREE.PlaneGeometry(6,6),new THREE.ShadowMaterial({opacity:.16})); pshadow.position.set(0,-.7,-.45); pshadow.receiveShadow=true; pdpScene.add(pshadow);
+
+  cam=new THREE.PerspectiveCamera(24,1,.1,60);
+  pdpCam=new THREE.PerspectiveCamera(28,1,.1,60);
+}
+
+/* Front and back photos never have identical outlines, which would leave a see-through seam where
+   the two shells meet. Both shells get the union outline; photo colour is bled outward to fill it. */
+function sharedSilhouette(fImg,bImg){
+  const w=fImg.naturalWidth,h=fImg.naturalHeight;
+  const mask=document.createElement("canvas"); mask.width=w; mask.height=h; const mc=mask.getContext("2d");
+  mc.drawImage(fImg,0,0,w,h); mc.save(); mc.translate(w,0); mc.scale(-1,1); mc.drawImage(bImg,0,0,w,h); mc.restore();
+  const dil=document.createElement("canvas"); dil.width=w; dil.height=h; const dc=dil.getContext("2d");
+  for(let a=0;a<8;a++) dc.drawImage(mask,Math.round(Math.cos(a*Math.PI/4)*3),Math.round(Math.sin(a*Math.PI/4)*3));
+  dc.drawImage(mask,0,0);
+  mc.clearRect(0,0,w,h); mc.drawImage(dil,0,0);
+  const make=(im,mirror)=>{
+    // this shell's outline = its own photo + the other photo's outline only where the two differ by a few
+    // pixels (closes the side seam). Larger differences (a hood up on one side only) are not borrowed.
+    const own=document.createElement("canvas"); own.width=w; own.height=h; const o=own.getContext("2d");
+    for(const r of [2,4,6]) for(let a=0;a<8;a++) o.drawImage(im,Math.round(Math.cos(a*Math.PI/4)*r),Math.round(Math.sin(a*Math.PI/4)*r),w,h);
+    o.globalCompositeOperation="source-in";
+    if(mirror){ o.save(); o.translate(w,0); o.scale(-1,1); o.drawImage(mask,0,0); o.restore(); } else o.drawImage(mask,0,0);
+    o.globalCompositeOperation="source-over"; o.drawImage(im,0,0,w,h);
+    const c=document.createElement("canvas"); c.width=w; c.height=h; const x=c.getContext("2d");
+    x.drawImage(im,0,0,w,h);
+    x.globalCompositeOperation="destination-over";
+    for(const r of [2,5,9,14,20,28,38]) for(let a=0;a<8;a++){ x.drawImage(im,Math.round(Math.cos(a*Math.PI/4)*r),Math.round(Math.sin(a*Math.PI/4)*r),w,h); }
+    x.globalCompositeOperation="destination-in"; x.drawImage(own,0,0);
+    x.globalCompositeOperation="source-over";
+    return c;
+  };
+  return [make(fImg,false),make(bImg,true)];
+}
+
+/* hanger-free version of a garment, built on demand (and preloaded in the background) */
+// texnh/: dedicated hanger-free photos (front + back), aligned to the rack photos' frame.
+// Garments listed in NO_NH keep the hanger build until a proper back photo exists.
+const USE_NH=true, NO_NH=new Set([]);
+const nhOK=k=>USE_NH&&!NO_NH.has(P[k].id);
+const pimg=(p,s)=>USE_NH&&!NO_NH.has(p.id)?texnh(p,s):img(p,s);   // product page photos: hanger-free where available
+const assetsNH=[], nhPending={};
+function ensureNH(k){
+  if(assetsNH[k]) return Promise.resolve(assetsNH[k]);
+  if(nhPending[k]) return nhPending[k];
+  const p=P[k], li=src=>new Promise((res,rej)=>{const im=new Image(); im.onload=()=>res(im); im.onerror=rej; im.src=src;});
+  nhPending[k]=Promise.all([li(texnh(p,"f")),li(texnh(p,"b"))]).then(([f0,b0])=>{
+    const [f,b]=sharedSilhouette(f0,b0), a={};
+    for(const [key,im,side] of [["front",f,1],["back",b,-1]]){
+      const t=makeTexture(im);
+      a[key]={geo:surfaceGeometry(heightField(im,p.th,null,true),side),mat:garmentMaterial(t,side),
+              depth:new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking,map:t,alphaTest:.5})};
+    }
+    assetsNH[k]=a; return a;
+  });
+  return nhPending[k];
+}
+function useAsset(g,a){   // swap a shown garment group over to another build of the same garment
+  [a.front,a.back].forEach((s,i)=>{ const m=g.children[i]; m.geometry=s.geo; m.material=s.mat; m.customDepthMaterial=s.depth; });
+}
+
+/* ---------- turntable frames (AI-generated 360° video, background removed) ----------
+   Garments listed in SPIN show real rotation frames in the focus view and on the product page:
+   a camera-facing card whose picture is the frame nearest to the current turn angle. */
+const SPIN={"cardigan":{"atlases":5,"cols":5,"rows":4,"tw":751,"th":938,"aw":3755,"ah":3752,"rect":[31.71,199.66,963.35,1202.1],"frames":[[0.0,0,0,0],[3.88,0,1,0],[7.53,0,2,0],[11.29,0,3,0],[15.98,0,4,0],[17.56,0,0,1],[23.24,0,1,1],[26.1,0,2,1],[29.13,0,3,1],[31.42,0,4,1],[36.74,0,0,2],[43.16,0,1,2],[47.4,0,2,2],[53.2,0,3,2],[57.93,0,4,2],[60.94,0,0,3],[66.18,0,1,3],[73.25,0,2,3],[79.37,0,3,3],[85.62,0,4,3],[90.0,1,0,0],[94.81,1,1,0],[97.08,1,2,0],[100.61,1,3,0],[103.83,1,4,0],[107.7,1,0,1],[111.94,1,1,1],[117.68,1,2,1],[120.13,1,3,1],[123.69,1,4,1],[127.88,1,0,2],[131.15,1,1,2],[135.07,1,2,2],[138.56,1,3,2],[142.33,1,4,2],[145.9,1,0,3],[149.84,1,1,3],[154.39,1,2,3],[157.25,1,3,3],[161.55,1,4,3],[165.01,2,0,0],[167.41,2,1,0],[174.17,2,2,0],[176.09,2,3,0],[180.0,2,4,0],[183.97,2,0,1],[187.18,2,1,1],[190.42,2,2,1],[194.76,2,3,1],[198.5,2,4,1],[201.51,2,0,2],[207.07,2,1,2],[209.2,2,2,2],[214.57,2,3,2],[216.96,2,4,2],[221.03,2,0,3],[225.42,2,1,3],[231.35,2,2,3],[236.15,2,3,3],[239.12,2,4,3],[244.35,3,0,0],[251.84,3,1,0],[258.37,3,2,0],[265.48,3,3,0],[270.0,3,4,0],[279.27,3,0,1],[283.47,3,1,1],[289.81,3,2,1],[295.59,3,3,1],[302.46,3,4,1],[307.45,3,0,2],[310.42,3,1,2],[315.0,3,2,2],[320.71,3,3,2],[324.9,3,4,2],[331.07,3,0,3],[336.14,3,1,3],[338.19,3,2,3],[341.09,3,3,3],[343.71,3,4,3],[349.09,4,0,0],[352.33,4,1,0],[355.69,4,2,0]]},"coach-olive":{"atlases":5,"cols":5,"rows":4,"tw":755,"th":920,"aw":3775,"ah":3680,"rect":[29.23,158.21,967.37,1179.29],"frames":[[0.0,0,0,0],[3.71,0,1,0],[7.76,0,2,0],[11.22,0,3,0],[13.99,0,4,0],[18.1,0,0,1],[23.58,0,1,1],[26.4,0,2,1],[29.28,0,3,1],[33.07,0,4,1],[36.74,0,0,2],[40.44,0,1,2],[43.61,0,2,2],[49.17,0,3,2],[53.53,0,4,2],[58.19,0,0,3],[62.88,0,1,3],[65.9,0,2,3],[70.14,0,3,3],[74.32,0,4,3],[80.37,1,0,0],[85.52,1,1,0],[90.0,1,2,0],[93.2,1,3,0],[100.38,1,4,0],[106.34,1,0,1],[112.1,1,1,1],[115.63,1,2,1],[119.91,1,3,1],[125.23,1,4,1],[130.45,1,0,2],[136.29,1,1,2],[140.46,1,2,2],[144.85,1,3,2],[151.09,1,4,2],[153.04,1,0,3],[156.41,1,1,3],[162.37,1,2,3],[165.91,1,3,3],[169.76,1,4,3],[172.78,2,0,0],[176.73,2,1,0],[180.0,2,2,0],[183.74,2,3,0],[188.33,2,4,0],[190.8,2,0,1],[195.87,2,1,1],[198.6,2,2,1],[202.21,2,3,1],[206.09,2,4,1],[209.98,2,0,2],[213.49,2,1,2],[216.9,2,2,2],[219.84,2,3,2],[224.71,2,4,2],[229.97,2,0,3],[235.75,2,1,3],[239.33,2,2,3],[244.23,2,3,3],[248.54,2,4,3],[255.55,3,0,0],[261.1,3,1,0],[266.63,3,2,0],[270.0,3,3,0],[275.31,3,4,0],[280.38,3,0,1],[285.95,3,1,1],[289.61,3,2,1],[293.94,3,3,1],[298.95,3,4,1],[304.28,3,0,2],[308.47,3,1,2],[311.5,3,2,2],[314.66,3,3,2],[318.91,3,4,2],[322.99,3,0,3],[326.62,3,1,3],[328.94,3,2,3],[334.78,3,3,3],[337.84,3,4,3],[342.24,4,0,0],[346.05,4,1,0],[348.06,4,2,0],[352.04,4,3,0],[356.03,4,4,0]]},"crew-pink":{"atlases":5,"cols":5,"rows":4,"tw":722,"th":867,"aw":3610,"ah":3468,"rect":[50.82,199.0,925.11,1111.06],"frames":[[0.0,0,0,0],[3.53,0,1,0],[7.49,0,2,0],[11.38,0,3,0],[14.81,0,4,0],[19.01,0,0,1],[21.45,0,1,1],[26.96,0,2,1],[30.19,0,3,1],[33.57,0,4,1],[37.3,0,0,2],[41.3,0,1,2],[45.8,0,2,2],[50.59,0,3,2],[55.64,0,4,2],[60.77,0,0,3],[66.33,0,1,3],[72.05,0,2,3],[77.97,0,3,3],[83.83,0,4,3],[90.0,1,0,0],[94.89,1,1,0],[100.25,1,2,0],[105.6,1,3,0],[111.0,1,4,0],[116.12,1,0,1],[121.1,1,1,1],[125.85,1,2,1],[130.55,1,3,1],[134.91,1,4,1],[139.08,1,0,2],[143.04,1,1,2],[146.89,1,2,2],[150.38,1,3,2],[153.72,1,4,2],[156.85,1,0,3],[162.55,1,1,3],[165.02,1,2,3],[169.29,1,3,3],[172.63,1,4,3],[176.35,2,0,0],[180.0,2,1,0],[183.26,2,2,0],[187.0,2,3,0],[191.99,2,4,0],[194.04,2,0,1],[198.58,2,1,1],[201.28,2,2,1],[207.21,2,3,1],[210.44,2,4,1],[214.11,2,0,2],[217.82,2,1,2],[221.73,2,2,2],[225.72,2,3,2],[230.08,2,4,2],[234.53,2,0,3],[239.1,2,1,3],[243.69,2,2,3],[248.63,2,3,3],[253.73,2,4,3],[258.99,3,0,0],[264.34,3,1,0],[270.0,3,2,0],[274.82,3,3,0],[280.52,3,4,0],[286.18,3,0,1],[291.79,3,1,1],[297.08,3,2,1],[302.11,3,3,1],[306.83,3,4,1],[311.38,3,0,2],[315.53,3,1,2],[319.43,3,2,2],[323.02,3,3,2],[326.47,3,4,2],[329.63,3,0,3],[332.67,3,1,3],[338.26,3,2,3],[340.74,3,3,3],[345.02,3,4,3],[348.61,4,0,0],[352.58,4,1,0],[355.99,4,2,0]]},"hoodie-char":{"atlases":5,"cols":5,"rows":4,"tw":725,"th":943,"aw":3625,"ah":3772,"rect":[47.32,133.5,929.36,1208.63],"frames":[[0.0,0,0,0],[3.4,0,1,0],[7.74,0,2,0],[11.48,0,3,0],[15.59,0,4,0],[18.07,0,0,1],[21.7,0,1,1],[27.1,0,2,1],[29.58,0,3,1],[34.89,0,4,1],[39.45,0,0,2],[42.74,0,1,2],[46.18,0,2,2],[49.76,0,3,2],[55.35,0,4,2],[59.56,0,0,3],[63.91,0,1,3],[68.43,0,2,3],[75.02,0,3,3],[80.14,0,4,3],[85.16,1,0,0],[90.0,1,1,0],[97.69,1,2,0],[103.67,1,3,0],[109.22,1,4,0],[114.32,1,0,1],[121.66,1,1,1],[126.19,1,2,1],[130.55,1,3,1],[134.59,1,4,1],[140.76,1,0,2],[147.82,1,1,2],[151.05,1,2,2],[155.9,1,3,2],[158.6,1,4,2],[161.04,1,0,3],[166.59,1,1,3],[168.36,1,2,3],[173.28,1,3,3],[176.0,1,4,3],[180.0,2,0,0],[183.46,2,1,0],[187.19,2,2,0],[190.48,2,3,0],[195.64,2,4,0],[197.24,2,0,1],[202.36,2,1,1],[206.89,2,2,1],[210.99,2,3,1],[213.85,2,4,1],[216.8,2,0,2],[219.87,2,1,2],[225.11,2,2,2],[228.76,2,3,2],[232.47,2,4,2],[236.39,2,0,3],[242.39,2,1,3],[247.08,2,2,3],[251.91,2,3,3],[256.95,2,4,3],[264.36,3,0,0],[270.0,3,1,0],[275.1,3,2,0],[280.5,3,3,0],[287.63,3,4,0],[292.66,3,0,1],[297.35,3,1,1],[301.77,3,2,1],[307.97,3,3,1],[311.92,3,4,1],[315.57,3,0,2],[319.0,3,1,2],[324.06,3,2,2],[327.14,3,3,2],[330.0,3,4,2],[332.61,3,0,3],[336.58,3,1,3],[340.76,3,2,3],[345.27,3,3,3],[349.32,3,4,3],[352.17,4,0,0],[356.3,4,1,0]]},"jacket-sand":{"atlases":4,"cols":5,"rows":4,"tw":783,"th":896,"aw":3915,"ah":3584,"rect":[3.74,148.0,1004.39,1149.07],"frames":[[0.0,0,0,0],[4.75,0,1,0],[7.15,0,2,0],[10.46,0,3,0],[13.42,0,4,0],[17.47,0,0,1],[20.89,0,1,1],[25.37,0,2,1],[29.43,0,3,1],[34.86,0,4,1],[39.47,0,0,2],[45.64,0,1,2],[51.05,0,2,2],[58.21,0,3,2],[64.31,0,4,2],[72.44,0,0,3],[80.22,0,1,3],[90.0,0,2,3],[96.09,0,3,3],[104.92,0,4,3],[111.73,1,0,0],[119.68,1,1,0],[125.46,1,2,0],[132.16,1,3,0],[137.26,1,4,0],[143.16,1,0,1],[147.43,1,1,1],[152.35,1,2,1],[156.12,1,3,1],[160.39,1,4,1],[163.43,1,0,2],[169.43,1,1,2],[172.37,1,2,2],[175.81,1,3,2],[180.0,1,4,2],[183.42,1,0,3],[186.66,1,1,3],[191.62,1,2,3],[195.69,1,3,3],[199.95,1,4,3],[202.01,2,0,0],[207.09,2,1,0],[210.06,2,2,0],[212.5,2,3,0],[218.63,2,4,0],[222.26,2,0,1],[225.27,2,1,1],[229.41,2,2,1],[232.7,2,3,1],[237.03,2,4,1],[240.64,2,0,2],[245.67,2,1,2],[249.73,2,2,2],[255.09,2,3,2],[259.48,2,4,2],[265.41,2,0,3],[270.0,2,1,3],[275.31,2,2,3],[280.09,2,3,3],[286.33,2,4,3],[291.05,3,0,0],[296.54,3,1,0],[300.72,3,2,0],[305.67,3,3,0],[309.24,3,4,0],[313.58,3,0,1],[316.97,3,1,1],[321.15,3,2,1],[327.77,3,3,1],[330.72,3,4,1],[334.17,3,0,2],[336.63,3,1,2],[342.27,3,2,2],[345.15,3,3,2],[349.3,3,4,2],[353.18,3,0,3],[356.61,3,1,3]]},"jersey":{"atlases":5,"cols":5,"rows":4,"tw":720,"th":829,"aw":3600,"ah":3316,"rect":[49.74,204.5,923.59,1062.5],"frames":[[0.0,0,0,0],[3.51,0,1,0],[8.46,0,2,0],[12.27,0,3,0],[14.07,0,4,0],[18.71,0,0,1],[23.54,0,1,1],[26.58,0,2,1],[28.75,0,3,1],[34.11,0,4,1],[37.3,0,0,2],[42.77,0,1,2],[45.23,0,2,2],[48.59,0,3,2],[51.07,0,4,2],[56.73,0,0,3],[60.04,0,1,3],[62.52,0,2,3],[68.14,0,3,3],[71.11,0,4,3],[76.15,1,0,0],[78.35,1,1,0],[83.21,1,2,0],[85.72,1,3,0],[90.0,1,4,0],[93.69,1,0,1],[97.56,1,1,1],[100.78,1,2,1],[104.55,1,3,1],[107.51,1,4,1],[111.1,1,0,2],[117.63,1,1,2],[120.55,1,2,2],[123.97,1,3,2],[126.79,1,4,2],[130.32,1,0,3],[136.14,1,1,3],[138.63,1,2,3],[141.72,1,3,3],[146.65,1,4,3],[148.75,2,0,0],[153.32,2,1,0],[157.4,2,2,0],[161.1,2,3,0],[164.37,2,4,0],[168.86,2,0,1],[172.26,2,1,1],[176.11,2,2,1],[180.0,2,3,1],[184.09,2,4,1],[187.1,2,0,2],[190.73,2,1,2],[194.72,2,2,2],[199.4,2,3,2],[201.47,2,4,2],[206.66,2,0,3],[209.97,2,1,3],[212.47,2,2,3],[218.43,2,3,3],[222.1,2,4,3],[224.94,3,0,0],[228.64,3,1,0],[231.64,3,2,0],[235.6,3,3,0],[238.75,3,4,0],[242.65,3,0,1],[245.88,3,1,1],[250.15,3,2,1],[253.6,3,3,1],[257.82,3,4,1],[261.59,3,0,2],[266.18,3,1,2],[270.0,3,2,2],[272.89,3,3,2],[279.11,3,4,2],[282.3,3,0,3],[286.36,3,1,3],[290.09,3,2,3],[294.61,3,3,3],[298.66,3,4,3],[303.46,4,0,0],[307.91,4,1,0],[313.05,4,2,0],[317.37,4,3,0],[322.36,4,4,0],[326.61,4,0,1],[331.53,4,1,1],[334.88,4,2,1],[338.62,4,3,1],[341.5,4,4,1],[344.95,4,0,2],[349.72,4,1,2],[351.53,4,2,2],[356.89,4,3,2]]},"ls-navy":{"atlases":4,"cols":5,"rows":4,"tw":693,"th":842,"aw":3465,"ah":3368,"rect":[66.13,214.4,888.05,1079.34],"frames":[[0.0,0,0,0],[3.86,0,1,0],[7.75,0,2,0],[10.74,0,3,0],[14.87,0,4,0],[19.25,0,0,1],[22.78,0,1,1],[26.66,0,2,1],[28.65,0,3,1],[34.18,0,4,1],[38.47,0,0,2],[42.62,0,1,2],[48.51,0,2,2],[54.49,0,3,2],[62.79,0,4,2],[70.71,0,0,3],[80.57,0,1,3],[90.0,0,2,3],[101.53,0,3,3],[114.22,0,4,3],[126.57,1,0,0],[134.21,1,1,0],[141.13,1,2,0],[146.02,1,3,0],[151.44,1,4,0],[155.33,1,0,1],[159.64,1,1,1],[162.68,1,2,1],[166.16,1,3,1],[168.18,1,4,1],[172.08,1,0,2],[176.57,1,1,2],[180.0,1,2,2],[183.23,1,3,2],[186.33,1,4,2],[191.09,1,0,3],[194.6,1,1,3],[197.69,1,2,3],[202.24,1,3,3],[206.55,1,4,3],[212.84,2,0,0],[218.8,2,1,0],[227.77,2,2,0],[236.71,2,3,0],[248.29,2,4,0],[259.09,2,0,1],[270.0,2,1,1],[280.17,2,2,1],[289.98,2,3,1],[296.99,2,4,1],[304.24,2,0,2],[309.35,2,1,2],[314.88,2,2,2],[318.57,2,3,2],[322.81,2,4,2],[325.97,2,0,3],[329.68,2,1,3],[335.27,2,2,3],[337.43,2,3,3],[341.81,2,4,3],[345.15,3,0,0],[349.37,3,1,0],[352.14,3,2,0],[356.39,3,3,0]]},"racing":{"atlases":5,"cols":5,"rows":4,"tw":764,"th":915,"aw":3820,"ah":3660,"rect":[25.21,157.3,980.01,1173.28],"frames":[[0.0,0,0,0],[4.14,0,1,0],[7.95,0,2,0],[11.9,0,3,0],[14.13,0,4,0],[18.42,0,0,1],[22.72,0,1,1],[27.32,0,2,1],[29.4,0,3,1],[34.21,0,4,1],[36.99,0,0,2],[42.01,0,1,2],[44.45,0,2,2],[47.47,0,3,2],[53.78,0,4,2],[57.05,0,0,3],[60.53,0,1,3],[63.3,0,2,3],[67.2,0,3,3],[70.85,0,4,3],[74.05,1,0,0],[79.64,1,1,0],[82.15,1,2,0],[87.37,1,3,0],[90.0,1,4,0],[93.51,1,0,1],[97.86,1,1,1],[101.1,1,2,1],[105.32,1,3,1],[110.09,1,4,1],[114.94,1,0,2],[118.43,1,1,2],[122.64,1,2,2],[125.97,1,3,2],[130.34,1,4,2],[133.58,1,0,3],[137.43,1,1,3],[144.25,1,2,3],[147.02,1,3,3],[150.74,1,4,3],[153.21,2,0,0],[158.5,2,1,0],[161.4,2,2,0],[165.69,2,3,0],[169.08,2,4,0],[172.42,2,0,1],[175.98,2,1,1],[180.0,2,2,1],[184.15,2,3,1],[188.04,2,4,1],[191.01,2,0,2],[194.24,2,1,2],[198.35,2,2,2],[202.3,2,3,2],[207.56,2,4,2],[209.64,2,0,3],[213.02,2,1,3],[218.91,2,2,3],[221.6,2,3,3],[225.28,2,4,3],[228.1,3,0,0],[232.02,3,1,0],[235.08,3,2,0],[239.84,3,3,0],[243.08,3,4,0],[246.97,3,0,1],[249.96,3,1,1],[253.68,3,2,1],[256.91,3,3,1],[261.36,3,4,1],[265.14,3,0,2],[270.0,3,1,2],[275.01,3,2,2],[277.28,3,3,2],[280.11,3,4,2],[285.65,3,0,3],[288.12,3,1,3],[293.67,3,2,3],[296.97,3,3,3],[299.67,3,4,3],[304.86,4,0,0],[307.53,4,1,0],[312.41,4,2,0],[314.66,4,3,0],[319.23,4,4,0],[321.67,4,0,1],[326.14,4,1,1],[330.09,4,2,1],[334.12,4,3,1],[337.88,4,4,1],[341.73,4,0,2],[345.35,4,1,2],[349.11,4,2,2],[352.62,4,3,2],[356.41,4,4,2]]},"tee-grey":{"atlases":5,"cols":5,"rows":4,"tw":796,"th":915,"aw":3980,"ah":3660,"rect":[2.79,193.2,1020.26,1173.26],"frames":[[0.0,0,0,0],[3.69,0,1,0],[7.3,0,2,0],[12.1,0,3,0],[14.14,0,4,0],[19.6,0,0,1],[23.15,0,1,1],[25.81,0,2,1],[29.45,0,3,1],[32.51,0,4,1],[36.72,0,0,2],[39.91,0,1,2],[44.23,0,2,2],[47.95,0,3,2],[52.9,0,4,2],[56.72,0,0,3],[61.74,0,1,3],[66.01,0,2,3],[71.43,0,3,3],[75.6,0,4,3],[80.85,1,0,0],[85.27,1,1,0],[90.0,1,2,0],[94.28,1,3,0],[96.32,1,4,0],[100.82,1,0,1],[105.02,1,1,1],[109.05,1,2,1],[112.63,1,3,1],[115.82,1,4,1],[119.94,1,0,2],[123.62,1,1,2],[127.88,1,2,2],[131.75,1,3,2],[134.65,1,4,2],[138.17,1,0,3],[141.98,1,1,3],[146.33,1,2,3],[151.02,1,3,3],[153.42,1,4,3],[156.47,2,0,0],[160.95,2,1,0],[162.81,2,2,0],[170.91,2,3,0],[172.23,2,4,0],[176.18,2,0,1],[180.0,2,1,1],[184.49,2,2,1],[187.63,2,3,1],[191.79,2,4,1],[193.66,2,0,2],[198.74,2,1,2],[202.13,2,2,2],[204.67,2,3,2],[211.25,2,4,2],[215.54,2,0,3],[218.75,2,1,3],[223.06,2,2,3],[226.72,2,3,3],[231.6,2,4,3],[235.39,3,0,0],[240.28,3,1,0],[244.46,3,2,0],[249.9,3,3,0],[253.92,3,4,0],[258.65,3,0,1],[262.23,3,1,1],[266.64,3,2,1],[270.0,3,3,1],[274.74,3,4,1],[278.94,3,0,2],[284.44,3,1,2],[288.56,3,2,2],[293.65,3,3,2],[297.55,3,4,2],[302.61,3,0,3],[306.2,3,1,3],[310.63,3,2,3],[314.01,3,3,3],[318.23,3,4,3],[321.07,4,0,0],[327.23,4,1,0],[330.62,4,2,0],[332.91,4,3,0],[337.92,4,4,0],[340.66,4,0,1],[344.59,4,1,1],[348.2,4,2,1],[352.16,4,3,1],[356.41,4,4,1]]},"tee-white":{"atlases":5,"cols":5,"rows":4,"tw":753,"th":884,"aw":3765,"ah":3536,"rect":[29.33,193.92,965.34,1133.3],"frames":[[0.0,0,0,0],[3.83,0,1,0],[7.13,0,2,0],[11.68,0,3,0],[14.74,0,4,0],[18.16,0,0,1],[22.22,0,1,1],[26.66,0,2,1],[28.81,0,3,1],[34.31,0,4,1],[37.78,0,0,2],[40.57,0,1,2],[44.61,0,2,2],[47.64,0,3,2],[52.1,0,4,2],[55.61,0,0,3],[60.55,0,1,3],[64.29,0,2,3],[69.74,0,3,3],[73.92,0,4,3],[79.85,1,0,0],[84.28,1,1,0],[90.0,1,2,0],[94.21,1,3,0],[99.93,1,4,0],[104.36,1,0,1],[110.33,1,1,1],[114.75,1,2,1],[120.32,1,3,1],[124.25,1,4,1],[129.28,1,0,2],[133.01,1,1,2],[137.71,1,2,2],[141.17,1,3,2],[145.3,1,4,2],[148.29,1,0,3],[154.24,1,1,3],[157.59,1,2,3],[160.11,1,3,3],[164.63,1,4,3],[168.52,2,0,0],[173.24,2,1,0],[176.37,2,2,0],[180.0,2,3,0],[183.58,2,4,0],[187.65,2,0,1],[190.4,2,1,1],[195.65,2,2,1],[199.52,2,3,1],[201.41,2,4,1],[206.2,2,0,2],[209.18,2,1,2],[215.13,2,2,2],[217.75,2,3,2],[221.61,2,4,2],[224.69,2,0,3],[229.15,2,1,3],[232.44,2,2,3],[237.3,2,3,3],[241.14,2,4,3],[246.4,3,0,0],[250.28,3,1,0],[255.85,3,2,0],[260.18,3,3,0],[266.04,3,4,0],[270.0,3,0,1],[274.24,3,1,1],[278.18,3,2,1],[283.44,3,3,1],[287.65,3,4,1],[293.12,3,0,2],[297.22,3,1,2],[302.37,3,2,2],[306.32,3,3,2],[311.21,3,4,2],[314.44,3,0,3],[318.47,3,1,3],[321.41,3,2,3],[325.19,3,3,3],[328.33,3,4,3],[333.9,4,0,0],[336.74,4,1,0],[341.57,4,2,0],[345.71,4,3,0],[349.48,4,4,0],[352.14,4,0,1],[356.05,4,1,1]]},"zip-green":{"atlases":5,"cols":5,"rows":4,"tw":757,"th":985,"aw":3785,"ah":3940,"rect":[30.15,101.33,970.16,1262.22],"frames":[[0.0,0,0,0],[3.86,0,1,0],[7.69,0,2,0],[11.76,0,3,0],[15.55,0,4,0],[18.56,0,0,1],[22.99,0,1,1],[27.01,0,2,1],[29.11,0,3,1],[33.66,0,4,1],[38.64,0,0,2],[41.22,0,1,2],[44.0,0,2,2],[49.8,0,3,2],[52.89,0,4,2],[56.3,0,0,3],[59.91,0,1,3],[63.74,0,2,3],[67.79,0,3,3],[72.13,0,4,3],[76.53,1,0,0],[81.1,1,1,0],[85.56,1,2,0],[90.0,1,3,0],[95.62,1,4,0],[101.41,1,0,1],[109.01,1,1,1],[114.2,1,2,1],[119.03,1,3,1],[123.61,1,4,1],[127.86,1,0,2],[132.05,1,1,2],[135.96,1,2,2],[139.64,1,3,2],[143.11,1,4,2],[146.53,1,0,3],[149.66,1,1,3],[152.59,1,2,3],[157.91,1,3,3],[160.25,1,4,3],[164.41,2,0,0],[168.01,2,1,0],[172.3,2,2,0],[176.2,2,3,0],[180.0,2,4,0],[183.39,2,0,1],[187.17,2,1,1],[190.81,2,2,1],[195.29,2,3,1],[198.89,2,4,1],[200.83,2,0,2],[206.73,2,1,2],[209.18,2,2,2],[214.45,2,3,2],[217.39,2,4,2],[220.43,2,0,3],[223.59,2,1,3],[230.45,2,2,3],[234.15,2,3,3],[237.98,2,4,3],[241.94,3,0,0],[246.28,3,1,0],[250.77,3,2,0],[255.49,3,3,0],[260.24,3,4,0],[265.17,3,0,1],[270.0,3,1,1],[275.39,3,2,1],[280.65,3,3,1],[285.98,3,4,1],[291.13,3,0,2],[296.18,3,1,2],[302.85,3,2,2],[307.29,3,3,2],[311.43,3,4,2],[315.33,3,0,3],[318.97,3,1,3],[322.63,3,2,3],[325.97,3,3,3],[329.07,3,4,3],[334.76,4,0,0],[337.32,4,1,0],[341.84,4,2,0],[345.94,4,3,0],[349.51,4,4,0],[352.77,4,0,1],[356.57,4,1,1]]}};
+const spinAssets={}, spinPending={};
+const spinURL=(id,i)=>`assets/spin/${id}-${i}.webp`;
+const SPIN_VERT=`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`;
+// two neighbouring turntable frames, cross-faded by where the current angle sits between them. The fade is done
+// on premultiplied colour so the two cut-outs' edges do not make a light fringe where they differ.
+const SPIN_FRAG=`uniform sampler2D mapA; uniform sampler2D mapB; uniform vec2 offA; uniform vec2 offB; uniform vec2 rep; uniform float t; uniform float uDim;
+varying vec2 vUv;
+void main(){
+  vec4 a=texture2D(mapA,vUv*rep+offA); vec4 b=texture2D(mapB,vUv*rep+offB);
+  vec3 rgb=mix(a.rgb*a.a,b.rgb*b.a,t); float al=mix(a.a,b.a,t);
+  if(al<0.02) discard;
+  gl_FragColor=vec4(rgb/al*uDim,al);
+  #include <colorspace_fragment>
+}`;
+function ensureSpin(k){
+  const id=P[k].id, m=SPIN[id]; if(!m) return Promise.reject(new Error("no spin"));
+  if(spinAssets[k]) return Promise.resolve(spinAssets[k]);
+  if(spinPending[k]) return spinPending[k];
+  const li=src=>new Promise((res,rej)=>{const im=new Image(); im.onload=()=>res(im); im.onerror=rej; im.src=src;});
+  spinPending[k]=Promise.all(Array.from({length:m.atlases},(_,i)=>li(spinURL(id,i)))).then(ims=>{
+    const texs=ims.map(im=>{ const t=new THREE.Texture(im); t.colorSpace=THREE.SRGBColorSpace; t.generateMipmaps=false;
+      t.minFilter=THREE.LinearFilter; t.magFilter=THREE.LinearFilter; t.anisotropy=renderer.capabilities.getMaxAnisotropy(); t.needsUpdate=true; return t; });
+    // shadow pass uses the nearest frame only (offset on a per-atlas depth texture clone)
+    const dtexs=texs.map(t=>{ const d=t.clone(); d.repeat.set(m.tw/m.aw,m.th/m.ah); d.needsUpdate=true; return d; });
+    const depths=dtexs.map(t=>new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking,map:t,alphaTest:.5}));
+    const [rx,ry,rw,rh]=m.rect;
+    const geo=new THREE.PlaneGeometry(rw/1024*GW, rh/1326*GH);
+    geo.translate(((rx+rw/2)/1024-.5)*GW, HOOK_Y-(ry+rh/2)/1326*GH, 0);
+    const order=m.frames.map((f,i)=>i).sort((x,y)=>m.frames[x][0]-m.frames[y][0]);   // frames by angle
+    return (spinAssets[k]={m,texs,dtexs,depths,geo,order});
+  });
+  return spinPending[k];
+}
+function spinGroup(a, castShadow){
+  const g=new THREE.Group(); g.rotation.order="ZXY";
+  const m=a.m;
+  const mat=new THREE.ShaderMaterial({uniforms:{mapA:{value:a.texs[0]},mapB:{value:a.texs[0]},offA:{value:new THREE.Vector2()},offB:{value:new THREE.Vector2()},
+    rep:{value:new THREE.Vector2(m.tw/m.aw,m.th/m.ah)},t:{value:0},uDim:{value:1}},vertexShader:SPIN_VERT,fragmentShader:SPIN_FRAG,transparent:false});
+  mat.alphaToCoverage=true;
+  const holder=new THREE.Group(), mesh=new THREE.Mesh(a.geo,mat);
+  mesh.castShadow=castShadow; mesh.customDepthMaterial=a.depths[0];
+  holder.add(mesh); g.add(holder); g.userData.spin={a,holder,mesh,mat,cur:-1};
+  return g;
+}
+function updateSpin(g, spin){
+  const s=g&&g.userData.spin; if(!s) return;
+  s.holder.rotation.y=-spin;                               // the card keeps facing the camera
+  const deg=((-spin*180/Math.PI)%360+360)%360;               // video turns the opposite way to rotation.y
+  const m=s.a.m, fr=m.frames, ord=s.a.order, n=ord.length;
+  // frames i (angle <= deg) and j (next), wrapping at 360
+  let lo=0,hi=n-1; while(lo<hi){ const mid=(lo+hi+1)>>1; if(fr[ord[mid]][0]<=deg) lo=mid; else hi=mid-1; }
+  const i=ord[lo], j=ord[(lo+1)%n];
+  const a0=fr[i][0], a1=fr[j][0]+((lo+1)%n===0?360:0);
+  let t=a1>a0?Math.min(1,Math.max(0,(deg-a0)/(a1-a0))):0;
+  // cross-fade only while turning: at rest the nearest frame is shown on its own, so a stopped
+  // garment never shows two logos. The fade eases out with the angular speed.
+  const now=performance.now()/1000; if(s.lt===undefined){ s.lt=now; s.ld=deg; s.spd=0; }
+  const dt=Math.max(1e-3,now-s.lt); let dd=Math.abs(deg-s.ld); if(dd>180) dd=360-dd;
+  s.spd+=((dd/dt)-s.spd)*Math.min(1,dt*8); s.lt=now; s.ld=deg;
+  const blend=Math.min(1,s.spd/40);                         // full blend above ~40°/s
+  t=Math.round(t)+(t-Math.round(t))*blend;
+  const off=(f,v)=>v.set(f[2]*m.tw/m.aw, 1-(f[3]+1)*m.th/m.ah);
+  const u=s.mat.uniforms;
+  u.mapA.value=s.a.texs[fr[i][1]]; u.mapB.value=s.a.texs[fr[j][1]]; off(fr[i],u.offA.value); off(fr[j],u.offB.value); u.t.value=t;
+  const near=t<0.5?i:j;
+  if(near!==s.cur){ s.cur=near; const f=fr[near]; s.a.dtexs[f[1]].offset.set(f[2]*m.tw/m.aw, 1-(f[3]+1)*m.th/m.ah); s.mesh.customDepthMaterial=s.a.depths[f[1]]; }
+}
+const hasSpin=k=>!!SPIN[P[k].id];
+
+/* ---------- real 3D models (GLB) ----------
+   Garments listed in MODEL use a modelled mesh in the focus view and on the product page.
+   top/bottom: the photo's hood-top and hem rows in the 1024x1326 garment frame, so the model
+   hangs exactly where the photo version does. yaw turns the model's front towards +z. */
+// (3D mesh route kept for reference; the modelled fabric read as CG, so garments use turntable frames instead)
+const MODEL={};
+const modelAssets={}, modelPending={};
+const gltfLoader=new GLTFLoader(); gltfLoader.setMeshoptDecoder(MeshoptDecoder);
+const hasModel=k=>!!MODEL[P[k].id];
+function ensureModel(k){
+  const d=MODEL[P[k].id]; if(!d) return Promise.reject(new Error("no model"));
+  if(modelAssets[k]) return Promise.resolve(modelAssets[k]);
+  if(modelPending[k]) return modelPending[k];
+  const getBuf=()=>import(new URL(d.url,location.href).href).then(m=>{ const bin=atob(m.default), u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); return u.buffer; });
+  // textures travel as plain image files (like every other photo on the page) and are applied here;
+  // flipY=false because glTF UVs start at the top-left
+  const li=src=>new Promise((res,rej)=>{const im=new Image(); im.onload=()=>res(im); im.onerror=rej; im.src=src;});
+  const texOf=(im,srgb)=>{ const t=new THREE.Texture(im); t.flipY=false; t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; t.anisotropy=renderer.capabilities.getMaxAnisotropy(); t.needsUpdate=true; return t; };
+  modelPending[k]=Promise.all([getBuf().then(buf=>new Promise((res,rej)=>gltfLoader.parse(buf,"",res,rej))),li(d.color),li(d.normal)]).then(([g,ci,ni])=>{
+    const inner=g.scene; inner.rotation.y=d.yaw;
+    const cmap=texOf(ci,true), nmap=texOf(ni,false);
+    inner.traverse(o=>{ if(o.isMesh&&o.material){ o.material.map=cmap; o.material.normalMap=nmap; o.material.needsUpdate=true; } });
+    const wrap=new THREE.Group(); wrap.add(inner); wrap.updateMatrixWorld(true);
+    const bb=new THREE.Box3().setFromObject(wrap), c=new THREE.Vector3(); bb.getCenter(c);
+    const yTop=HOOK_Y-d.top/1326*GH, yBot=HOOK_Y-d.bottom/1326*GH, sc=(yTop-yBot)/(bb.max.y-bb.min.y);
+    wrap.scale.setScalar(sc); wrap.position.set(-c.x*sc, yBot-bb.min.y*sc, -c.z*sc);
+    inner.traverse(o=>{ if(o.isMesh){ o.castShadow=true; if(o.material){ o.material.envMapIntensity=0.9; o.material.color.multiplyScalar(d.tone||1); } } });
+    return (modelAssets[k]={wrap});
+  });
+  return modelPending[k];
+}
+function modelGroup(a, castShadow){
+  const g=new THREE.Group(); g.rotation.order="ZXY";
+  const w=a.wrap.clone(true); w.traverse(o=>{ if(o.isMesh) o.castShadow=castShadow; });
+  g.add(w); g.userData.model=true; return g;
+}
+async function preloadNH(){ for(let k=0;k<N;k++){ if(!nhOK(k)) continue; try{ await ensureNH(k); }catch(e){} await new Promise(r=>setTimeout(r,40)); } }
+
+/* ================= loading ================= */
+async function loadAll(){
+  const total=N*2+P.filter(p=>p.sides).length*2; let done=0;
+  const loadImg=src=>new Promise((res,rej)=>{const im=new Image(); im.onload=()=>{done++; $("loadBar").style.width=(done/total*100)+"%"; res(im);}; im.onerror=rej; im.src=src;});
+  const ims=await Promise.all(P.map(p=>Promise.all([loadImg(tex(p,"f")),loadImg(tex(p,"b")),...(p.sides?[loadImg(tex(p,"sR")),loadImg(tex(p,"sL"))]:[])])));
+  ims.forEach(([f0,b0,sR0,sL0],k)=>{
+    const p=P[k], a={};
+    const [f,b]=sharedSilhouette(f0,b0);
+    let ext=null, sRt=null, sLt=null;
+    if(sR0&&sL0){ ext=sideExtents(sR0,sL0,Math.round(160*GH)); sRt=makeTexture(sR0); sLt=makeTexture(sL0); }
+    for(const [key,im,side] of [["front",f,1],["back",b,-1]]){
+      const tex=makeTexture(im);
+      const geo=surfaceGeometry(heightField(im,p.th,ext?(side>0?ext.F:ext.B):null),side);
+      const depth=new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking,map:tex,alphaTest:.5});
+      a[key]={geo,mat:garmentMaterial(tex,side,sRt,sLt),depth};
+    }
+    assets[k]=a;
+    const g=garmentGroup(a,true);
+    const it={k,g,baseX:(k-(N-1)/2)*SPACING,x:0,xV:0,z:0,zV:0,rot:REST,rotV:0,sw:0,swV:0,swx:0,swxV:0,drop:1.4,dropV:0,t0:k*0.075,pxv:0};
+    g.position.set(it.baseX,it.drop,0); g.rotation.y=REST;
+    rackScene.add(g); items.push(it);
+  });
+}
+
+/* ================= rack camera (frustum anchored to the stage box) ================= */
+const stage=$("stage");
+let pan=0, panV=0, panMax=0, visW=5;
+function viewport(){ return {W:canvas.clientWidth,H:canvas.clientHeight}; }
+function placeCamera(){
+  const r=stage.getBoundingClientRect(), {W,H}=viewport();
+  const aspect=r.width/r.height, tanH=Math.tan(THREE.MathUtils.degToRad(cam.fov/2));
+  const needH=1.85, needW=4.9;
+  const zH=needH/(2*tanH), zW=needW/(2*tanH*aspect);
+  const z=Math.min(Math.max(zH,zW),zH*1.55);
+  visW=2*tanH*aspect*z;
+  const rackW=N*SPACING+.9; panMax=Math.max(0,(rackW-visW)/2+.15);
+  pan=THREE.MathUtils.clamp(pan,-panMax,panMax);
+  const vis=2*tanH*z, cy=-(0.5-0.13)*vis+0.02;   // rail sits ~13% below the stage top
+  cam.position.set(pan,cy+.14,z); cam.lookAt(pan,cy,0); cam.updateMatrixWorld();
+  const near=cam.near, top=near*tanH, right=top*aspect, k=2*right/r.width;
+  const L=-right-r.left*k, Rr=L+W*k, T=top+r.top*k, B=T-H*k;
+  cam.projectionMatrix.makePerspective(L,Rr,T,B,near,cam.far);
+  cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
+  return {r,k};
+}
+const _v=new THREE.Vector3();
+function toScreen(v){ _v.copy(v).project(cam); const {W,H}=viewport(); return {x:(_v.x+1)/2*W,y:(1-_v.y)/2*H}; }
+
+/* ================= rack interaction ================= */
+let hover=-1, ready=false;
+function pickAt(cx,cy){
+  const r=stage.getBoundingClientRect(); if(cy<r.top||cy>r.bottom) return -1;
+  let best=-1,bd=1e9;
+  for(const it of items){
+    const s=toScreen(new THREE.Vector3(it.baseX+it.x,-.6,it.z));
+    const reach=(it.k===hover?0.5:0.2)*Math.abs(toScreen(new THREE.Vector3(1,-.6,0)).x-toScreen(new THREE.Vector3(0,-.6,0)).x);
+    const d=Math.abs(cx-s.x); if(d<reach&&d<bd){bd=d;best=it.k;}
+  }
+  return best;
+}
+function setHover(k){
+  if(k===hover) return; hover=k;
+  if(k>=0&&hasSpin(k)) ensureSpin(k).catch(()=>{});   // prefetch the turntable frames while the garment is pointed at
+  stage.classList.toggle("pointing",k>=0);
+  if(k<0){ $("capName").textContent="Kirigo AW26"; $("capHint").textContent=canHover()?"服にカーソルを合わせる · クリックで開く":"服をタップ · もう一度タップで開く · 左右にスワイプ"; return; }
+  $("capName").textContent=`${P[k].name} — ${P[k].color}`;
+  $("capHint").textContent=`${yen(P[k].price)} · ${canHover()?"クリックで開く":"もう一度タップで開く"}`;
+}
+let drag=null;
+stage.addEventListener("pointermove",e=>{
+  if(!ready||fit.on) return;
+  if(drag){ const dx=e.clientX-drag.x; if(Math.abs(dx)>6) drag.moved=true;
+    if(drag.moved && panMax>0){ const pxPerUnit=stage.clientWidth/visW; pan=drag.pan-dx/pxPerUnit; panV=-(e.clientX-drag.lx)/pxPerUnit*60; drag.lx=e.clientX; }
+    return; }
+  if(e.pointerType==="mouse") setHover(pickAt(e.clientX,e.clientY));
+});
+stage.addEventListener("pointerleave",e=>{ if(e.pointerType==="mouse"&&!fit.on) setHover(-1); });
+stage.addEventListener("pointerdown",e=>{ if(!ready||fit.on) return; drag={x:e.clientX,lx:e.clientX,pan,moved:false}; if(e.pointerType!=="mouse") stage.setPointerCapture(e.pointerId); });
+stage.addEventListener("pointerup",e=>{
+  if(!drag) return; const moved=drag.moved; drag=null; if(moved) return;
+  const k=pickAt(e.clientX,e.clientY);
+  if(k<0){ if(e.pointerType!=="mouse") setHover(-1); return; }
+  if(e.pointerType!=="mouse" && k!==hover){ setHover(k); return; }
+  openFit(k);
+});
+stage.addEventListener("pointercancel",()=>{drag=null;});
+stage.addEventListener("keydown",e=>{
+  if(!ready) return;
+  if(e.key==="ArrowRight"||e.key==="ArrowLeft"){ e.preventDefault(); const k=hover<0?0:THREE.MathUtils.clamp(hover+(e.key==="ArrowRight"?1:-1),0,N-1); setHover(k); keepInView(k); }
+  if((e.key==="Enter"||e.key===" ")&&hover>=0){ e.preventDefault(); openFit(hover); }
+});
+function keepInView(k){ if(panMax<=0) return; const x=items[k].baseX; pan=THREE.MathUtils.clamp(x,-panMax,panMax); }
+
+/* ================= front/back viewer =================
+   Only the front and back are real photos; anything near a pure side view is inferred and looks off.
+   So the garment never rests side-on: dragging tilts it at most ~40°, a big swing or flick flips it,
+   and the flip itself passes the side in about half a second. At rest it sways a little. */
+function makeFlip(){ return {base:0,off:0,offV:0,raw:0,amp:0,t:0,dragging:false,lx:0,lt:0,vel:0,moved:false,spin:0,sw:0,swV:0,disabled:null,free:false,idle:0,snapping:false}; }
+function flipTo(f,base){ f.off+=f.base-base; f.base=base; }
+function flipDir(f,dir){ flipTo(f,f.base+dir*Math.PI); }
+function faceFront(f){ if(f.free){ f.base=f.base+f.off; f.off=0; } flipTo(f,Math.round(f.base/(2*Math.PI))*2*Math.PI); f.snapping=true; f.vel=0; f.idle=0; }
+function faceBack(f){ if(f.free){ f.base=f.base+f.off; f.off=0; } flipTo(f,Math.round((f.base-Math.PI)/(2*Math.PI))*2*Math.PI+Math.PI); f.snapping=true; f.vel=0; f.idle=0; }
+function isBack(f){ return f.free? Math.cos(f.spin)<0 : Math.abs(Math.round(f.base/Math.PI))%2===1; }
+const TILT=0.72;
+function flipStep(f,h){
+  if(f.free){
+    // real side photos exist: free 360° turn, inertia, and a slow showcase spin when left alone
+    f.t+=h; f.idle+=h;
+    if(f.dragging) f.idle=0;
+    else if(f.snapping){ spring(f,"off",0,40,12.6,h); if(Math.abs(f.off)<0.01&&Math.abs(f.offV)<0.05){ f.snapping=false; f.idle=-1.5; } }
+    else { const auto=(f.idle>2.2&&!reduce&&!f.still)?0.42:0; f.vel+=(auto-f.vel)*Math.min(1,h*(f.idle>2.2?0.9:2.2)); f.off+=f.vel*h; }
+    spring(f,"sw",0,22,2.2,h);
+    f.spin=f.base+f.off; return;
+  }
+  if(!f.dragging) spring(f,"off",0,90,19,h);
+  const settled=!f.dragging&&Math.abs(f.off)<0.06&&Math.abs(f.offV)<0.4;
+  f.amp+=((settled&&!reduce?1:0)-f.amp)*Math.min(1,h*(settled?1.1:9));
+  f.t+=h;
+  spring(f,"sw",0,22,2.2,h);
+  f.spin=f.base+f.off+f.amp*0.2*Math.sin(f.t*0.8);
+}
+function bindFlip(el,f,onTap){
+  let x0=0, pts=new Map(), pinch=null;
+  const zoomable=el.id==="fitView";
+  el.addEventListener("pointerdown",e=>{ if(f.disabled&&f.disabled()) return; if(e.target.closest(".zoomctl")) return;
+    pts.set(e.pointerId,{x:e.clientX,y:e.clientY}); el.setPointerCapture(e.pointerId);
+    if(zoomable&&pts.size===2){ const [a,b]=[...pts.values()]; pinch={d0:Math.hypot(a.x-b.x,a.y-b.y),z0:fit.zoomT,mx:(a.x+b.x)/2,my:(a.y+b.y)/2}; f.dragging=false; f.vel=0; return; }
+    f.dragging=true; f.raw=f.off; f.lx=x0=e.clientX; f.ly=e.clientY; f.lt=performance.now(); f.vel=0; f.moved=false; });
+  el.addEventListener("pointermove",e=>{
+    if(pts.has(e.pointerId)) pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pinch&&pts.size===2){ const [a,b]=[...pts.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y), mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
+      setZoom(pinch.z0*d/pinch.d0,mx,my);
+      fit.panTX+=(mx-pinch.mx)*fit.upp; fit.panTY-=(my-pinch.my)*fit.upp; pinch.mx=mx; pinch.my=my; clampPan(); return; }
+    if(!f.dragging) return; const now=performance.now(), dx=e.clientX-f.lx;
+    if(Math.abs(e.clientX-x0)>4) f.moved=true;
+    if(zoomable&&fit.zoomT>1.01){ fit.panTX+=dx*fit.upp; fit.panTY-=(e.clientY-f.ly)*fit.upp; clampPan(); f.lx=e.clientX; f.ly=e.clientY; f.lt=now; f.moved=true; return; }
+    f.raw+=dx*0.0105; if(f.free){ f.off+=dx*0.0105; f.snapping=false; } else f.off=TILT*Math.tanh(f.raw/TILT); f.offV=0;
+    f.vel=dx*0.0105/Math.max(1,now-f.lt)*1000; f.swV+=-dx*0.0006; f.lx=e.clientX; f.lt=now; });
+  const end=e=>{ if(e&&pts.has(e.pointerId)) pts.delete(e.pointerId); if(pinch){ if(pts.size<2){ pinch=null; } return; }
+    if(!f.dragging) return; f.dragging=false;
+    if(performance.now()-f.lt>90) f.vel=0;
+    if(f.free){ f.vel=Math.max(-6,Math.min(6,f.vel)); f.idle=0; }
+    else if(f.raw>1.6||f.vel>6) flipDir(f,1); else if(f.raw<-1.6||f.vel<-6) flipDir(f,-1);   // ~150px drag or a fast flick
+    if(!f.moved&&onTap) onTap(); };
+  el.addEventListener("pointerup",end); el.addEventListener("pointercancel",e=>{ pts.delete(e.pointerId); pinch=null; f.dragging=false; });
+}
+
+/* ================= focus view ================= */
+const fit={on:false,closing:false,k:-1,p:0,pV:0,g:null,zoom:1,zoomT:1,panX:0,panY:0,panTX:0,panTY:0,upp:0.001};
+const ZMAX=3;
+const fitF=makeFlip();
+const segF=$("segF"), segB=$("segB");
+function openFit(k){
+  if(fit.on) return;
+  fit.on=true; fit.closing=false; fit.k=k; fit.p=0; fit.pV=0;
+  fit.zoom=fit.zoomT=1; fit.panX=fit.panY=fit.panTX=fit.panTY=0;
+  Object.assign(fitF,makeFlip()); fitF.disabled=()=>!fit.on||fit.closing; fitF.free=!!P[k].sides||hasSpin(k)||hasModel(k); fitF.still=hasSpin(k); fitF.idle=1.2;
+  updateZoomUI();
+  fit.g=modelAssets[k]?modelGroup(modelAssets[k],false):spinAssets[k]?spinGroup(spinAssets[k],false):garmentGroup((nhOK(k)&&assetsNH[k])||assets[k],false); fitScene.add(fit.g);
+  const swapFit=g=>{ if(fit.on&&fit.k===k&&fit.g){ g.position.copy(fit.g.position); g.quaternion.copy(fit.g.quaternion); fitScene.remove(fit.g); fit.g=g; fitScene.add(g); } };
+  if(hasModel(k)&&!modelAssets[k]) ensureModel(k).then(a=>swapFit(modelGroup(a,false))).catch(()=>{});
+  else if(hasSpin(k)&&!spinAssets[k]) ensureSpin(k).then(a=>{ if(fit.on&&fit.k===k&&fit.g){ const g=spinGroup(a,false); g.position.copy(fit.g.position); g.quaternion.copy(fit.g.quaternion); fitScene.remove(fit.g); fit.g=g; fitScene.add(g); } }).catch(()=>{});
+  else if(nhOK(k)&&!assetsNH[k]&&!hasSpin(k)&&!hasModel(k)) ensureNH(k).then(a=>{ if(fit.on&&fit.k===k&&fit.g&&!fit.g.userData.spin&&!fit.g.userData.model) useAsset(fit.g,a); }).catch(()=>{});
+  items[k].g.visible=false; setHover(k);
+  const p=P[k];
+  $("fitTitle").textContent=p.name; $("fitMeta").textContent=`${p.color} · ${yen(p.price)}`;
+  $("fitIdx").textContent=`${String(k+1).padStart(2,"0")} / ${String(N).padStart(2,"0")}`;
+  const el=$("fit"); el.hidden=false; requestAnimationFrame(()=>el.classList.add("show"));
+  document.body.classList.add("fitting"); document.body.style.overflow="hidden";
+  $("fitClose").focus({preventScroll:true});
+}
+function closeFit(){
+  if(!fit.on||fit.closing) return;
+  fit.closing=true; fitF.dragging=false; faceFront(fitF); fit.zoomT=1; fit.panTX=fit.panTY=0;
+  $("fit").classList.remove("show");
+}
+function finishClose(){
+  fitScene.remove(fit.g); fit.g=null; items[fit.k].g.visible=true;
+  fit.on=false; fit.closing=false; $("fit").hidden=true;
+  document.body.classList.remove("fitting"); document.body.style.overflow="";
+  stage.focus({preventScroll:true});
+}
+$("fitClose").addEventListener("click",closeFit);
+segF.addEventListener("click",()=>faceFront(fitF));
+segB.addEventListener("click",()=>faceBack(fitF));
+$("fitGo").addEventListener("click",()=>{const k=fit.k; closeFit(); setTimeout(()=>showPDP(k),420);});
+bindFlip($("fitView"),fitF,null);   // a tap no longer closes the view (double-tap zooms); Close button or Esc instead
+function updateSeg(){ const back=isBack(fitF); segF.setAttribute("aria-pressed",String(!back)); segB.setAttribute("aria-pressed",String(back)); }
+
+/* ================= product page ================= */
+const pdp={k:-1,g:null};
+const pdpF=makeFlip();
+let sel={i:-1,size:null,qty:1};
+function showPDP(i){
+  sel={i,size:null,qty:1};
+  const p=P[i];
+  const rows=p.size.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join("");
+  const third=(p.cat==="T-shirt"&&p.id!=="ls-navy")||p.cat==="Shirt"?"袖丈":"袖丈（肩から）";
+  $("pdpView").innerHTML=`
+  <div class="pdp">
+    <button class="back mono" id="toRack">← Back to the rail</button>
+    <div class="pgrid">
+      <div class="gal">
+        <div class="main" id="galMain">${renderer?"":`<img class="flat" src="${pimg(p,"f")}" alt="${p.name} 前面">`}<span class="tag mono">${renderer?((p.sides||SPIN[p.id]||MODEL[p.id])?"ドラッグで360°回転":"ドラッグで傾ける · 大きく振ると裏返る"):""}</span></div>
+        <div class="thumbs" role="group" aria-label="表示する面">
+          <button data-s="f" aria-pressed="true" aria-label="前面"><img src="${pimg(p,"f")}" alt=""></button>
+          <button data-s="b" aria-pressed="false" aria-label="背面"><img src="${pimg(p,"b")}" alt=""></button>
+        </div>
+      </div>
+      <div class="info">
+        <span class="mono" style="color:var(--ink-2)">${p.cat} · AW26</span>
+        <h2>${p.name}</h2>
+        <div class="price">${yen(p.price)}<small>税込</small></div>
+        <p class="desc">${p.desc}</p>
+        <dl class="spec"><dt>カラー</dt><dd>${p.color}</dd><dt>素材</dt><dd>${p.mat}</dd><dt>シルエット</dt><dd>${p.cut}</dd></dl>
+        <div class="field">
+          <div class="lab"><span>サイズ</span><span class="mono" style="color:var(--ink-2)">${p.out.length?p.out.join(", ")+" は在庫切れ":"全サイズ在庫あり"}</span></div>
+          <div class="sizes" id="sizes">${p.size.map(r=>`<button data-sz="${r[0]}" aria-pressed="false" ${p.out.includes(r[0])?'data-out aria-disabled="true"':""}>${r[0]}</button>`).join("")}</div>
+          <div class="err" id="sizeErr"></div>
+        </div>
+        <div class="buy">
+          <div class="qty" aria-label="数量"><button id="qm" aria-label="1つ減らす">−</button><output id="qv">1</output><button id="qp" aria-label="1つ増やす">+</button></div>
+          <button class="btn" id="add">カートに入れる</button>
+        </div>
+        <div class="note"><b>配送について</b>11,000円（税込）以上で送料無料。通常2〜4営業日でお届けします（デモ表示）。</div>
+        <details><summary>サイズ表（cm）</summary>
+          <div class="tbl"><table><thead><tr><th>サイズ</th><th>着丈</th><th>身幅</th><th>${third}</th></tr></thead><tbody>${rows}</tbody></table></div>
+        </details>
+        <details><summary>お手入れ</summary><p class="desc" style="font-size:13px;color:var(--ink-2)">裏返してネットに入れ、30℃以下で洗濯してください。タンブル乾燥は避け、形を整えて陰干ししてください。</p></details>
+      </div>
+    </div>
+  </div>`;
+  $("rackView").hidden=true; $("pageView").hidden=true; $("pdpView").hidden=false; window.scrollTo(0,0); setHover(-1);
+  $("toRack").addEventListener("click",showRack);
+  // 3D gallery
+  if(renderer&&ready){
+    if(pdp.g) pdpScene.remove(pdp.g);
+    pdp.k=i; pdp.g=modelAssets[i]?modelGroup(modelAssets[i],true):spinAssets[i]?spinGroup(spinAssets[i],true):garmentGroup((nhOK(i)&&assetsNH[i])||assets[i],true); pdpScene.add(pdp.g);
+    if(hasModel(i)&&!modelAssets[i]) ensureModel(i).then(a=>{ if(pdp.k===i&&pdp.g){ pdpScene.remove(pdp.g); pdp.g=modelGroup(a,true); pdpScene.add(pdp.g); } }).catch(()=>{});
+    else if(hasSpin(i)&&!spinAssets[i]) ensureSpin(i).then(a=>{ if(pdp.k===i&&pdp.g){ pdpScene.remove(pdp.g); pdp.g=spinGroup(a,true); pdpScene.add(pdp.g); } }).catch(()=>{});
+    else if(nhOK(i)&&!assetsNH[i]&&!hasSpin(i)&&!hasModel(i)) ensureNH(i).then(a=>{ if(pdp.k===i&&pdp.g&&!pdp.g.userData.spin&&!pdp.g.userData.model) useAsset(pdp.g,a); }).catch(()=>{});
+    Object.assign(pdpF,makeFlip()); pdpF.off=-0.55; pdpF.free=!!p.sides||hasSpin(i)||hasModel(i); pdpF.still=hasSpin(i); pdpF.idle=1.5;
+    bindFlip($("galMain"),pdpF,null);
+  }
+  document.querySelectorAll(".thumbs button").forEach(b=>b.addEventListener("click",()=>{
+    document.querySelectorAll(".thumbs button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));
+    if(renderer&&ready){ if(b.dataset.s==="f") faceFront(pdpF); else faceBack(pdpF); }
+    else { const f=document.querySelector(".gal .flat"); if(f){ f.src=pimg(p,b.dataset.s); } }
+  }));
+  $("sizes").addEventListener("click",e=>{
+    const b=e.target.closest("button"); if(!b||b.hasAttribute("data-out")) return;
+    sel.size=b.dataset.sz; $("sizeErr").textContent="";
+    $("sizes").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));
+  });
+  $("qm").addEventListener("click",()=>{sel.qty=Math.max(1,sel.qty-1);$("qv").textContent=sel.qty;});
+  $("qp").addEventListener("click",()=>{sel.qty=Math.min(9,sel.qty+1);$("qv").textContent=sel.qty;});
+  $("add").addEventListener("click",()=>{ if(!sel.size){ $("sizeErr").textContent="サイズを選んでください。"; return; } addToCart(sel.i,sel.size,sel.qty); });
+}
+function showRack(){
+  if(pdp.g){ pdpScene.remove(pdp.g); pdp.g=null; }
+  $("pdpView").hidden=true; $("pageView").hidden=true; $("rackView").hidden=false; window.scrollTo(0,0); setHover(-1);
+}
+
+/* ================= physics + render loop ================= */
+function spring(o,key,target,k,c,dt){ const vk=key+"V"; const a=k*(target-o[key])-c*o[vk]; o[vk]+=a*dt; o[key]+=o[vk]*dt; }
+const ease=t=>t<0?0:t>1?1:t*t*(3-2*t);
+const tmpP=new THREE.Vector3(), tmpZ=new THREE.Vector3(), tmpQ=new THREE.Quaternion(), tmpS=new THREE.Vector3(), tgtQ=new THREE.Quaternion(), eul=new THREE.Euler(0,0,0,"ZXY");
+let clock=performance.now()/1000, T=0;
+
+// blur pipeline for the focus view
+let rtScene,rtA,rtB,blurMat,compMat,quadScene,quadCam,quad;
+function setupBlur(){
+  const o={type:THREE.HalfFloatType};
+  rtScene=new THREE.WebGLRenderTarget(4,4,{...o,samples:4}); rtA=new THREE.WebGLRenderTarget(4,4,o); rtB=new THREE.WebGLRenderTarget(4,4,o);
+  const qv=`varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.0,1.0); }`;
+  blurMat=new THREE.ShaderMaterial({uniforms:{tex:{value:null},dir:{value:new THREE.Vector2()}},vertexShader:qv,depthTest:false,depthWrite:false,
+    fragmentShader:`uniform sampler2D tex; uniform vec2 dir; varying vec2 vUv;
+    void main(){ vec4 s=texture2D(tex,vUv)*0.2270;
+      s+=(texture2D(tex,vUv+dir*1.3846)+texture2D(tex,vUv-dir*1.3846))*0.3162;
+      s+=(texture2D(tex,vUv+dir*3.2308)+texture2D(tex,vUv-dir*3.2308))*0.0703;
+      gl_FragColor=s; }`});
+  compMat=new THREE.ShaderMaterial({uniforms:{tex:{value:null},bg:{value:new THREE.Color()},veil:{value:0}},vertexShader:qv,depthTest:false,depthWrite:false,
+    fragmentShader:`uniform sampler2D tex; uniform vec3 bg; uniform float veil; varying vec2 vUv;
+    void main(){ vec4 s=texture2D(tex,vUv); vec3 c=bg*(1.0-s.a)+s.rgb; c=mix(c,bg,veil); gl_FragColor=vec4(c,1.0);
+      #include <colorspace_fragment>
+    }`});
+  quadScene=new THREE.Scene(); quadCam=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+  quad=new THREE.Mesh(new THREE.PlaneGeometry(2,2),blurMat); quadScene.add(quad);
+}
+function sizeTargets(){
+  const w=Math.max(4,Math.floor(renderer.domElement.width/2)), h=Math.max(4,Math.floor(renderer.domElement.height/2));
+  for(const rt of [rtScene,rtA,rtB]) if(rt.width!==w||rt.height!==h) rt.setSize(w,h);
+}
+function blurPass(src,dst,dx,dy){ quad.material=blurMat; blurMat.uniforms.tex.value=src.texture; blurMat.uniforms.dir.value.set(dx/src.width,dy/src.height); renderer.setRenderTarget(dst); renderer.render(quadScene,quadCam); }
+
+function resize(){
+  const {W,H}=viewport();
+  if(renderer.domElement.width!==Math.floor(W*renderer.getPixelRatio())||renderer.domElement.height!==Math.floor(H*renderer.getPixelRatio())) renderer.setSize(W,H,false);
+}
+function fitTarget(k){
+  // where the garment should hang so it fills ~62% of the window height, centred above the controls
+  const {W,H}=viewport();
+  const near=cam.near, e=cam.projectionMatrix.elements;
+  const unitsPerPxNear=(2*near/e[0])/W;        // width of near plane / window px
+  const frac=W<700?0.52:0.6;
+  const d=Math.max(GH*1.06*near/(unitsPerPxNear*frac*H), GW*near/(unitsPerPxNear*0.88*W));
+  const cy=W<700?H*0.40:H*0.43;
+  const ndc=new THREE.Vector3(0,1-2*cy/H,0.5).unproject(cam);
+  const dir=ndc.sub(cam.position).normalize();
+  const fwd=new THREE.Vector3(); cam.getWorldDirection(fwd);
+  const center=cam.position.clone().addScaledVector(dir,d/dir.dot(fwd));
+  center.y+= -(HOOK_Y-GH/2);                      // pivot sits at the hook, above the garment centre
+  const face=Math.atan2(cam.position.x-center.x,cam.position.z-center.z);
+  fit.upp=unitsPerPxNear*(d/near);                // world units per screen px at the garment
+  return {pos:center,face};
+}
+/* zoom / pan in the focus view: + − buttons, mouse wheel, double-click/tap, and pinch. While zoomed in,
+   dragging moves the garment instead of turning it. */
+function setZoom(z,ax,ay){
+  // ax,ay: screen point to zoom towards (defaults to the garment centre)
+  const old=fit.zoomT; z=Math.min(ZMAX,Math.max(1,z));
+  if(ax!==undefined){
+    const {W,H}=viewport(); const cx=W/2, cy=(W<700?H*0.40:H*0.43);
+    const wx=(ax-cx)*fit.upp, wy=-(ay-cy)*fit.upp;             // pointer offset from the garment centre, world units
+    const r=z/old; fit.panTX=wx-(wx-fit.panTX)*r; fit.panTY=wy-(wy-fit.panTY)*r;
+  }
+  fit.zoomT=z; if(z<=1.001){ fit.panTX=0; fit.panTY=0; }
+  clampPan(); updateZoomUI();
+}
+function clampPan(){ const lim=(fit.zoomT-1)*0.55*GH; fit.panTX=Math.max(-lim,Math.min(lim,fit.panTX)); fit.panTY=Math.max(-lim,Math.min(lim,fit.panTY)); }
+function updateZoomUI(){
+  $("zoomIn").disabled=fit.zoomT>=ZMAX-0.01; $("zoomOut").disabled=fit.zoomT<=1.01; $("zoomReset").disabled=fit.zoomT<=1.01;
+  $("fitView").classList.toggle("zoomed",fit.zoomT>1.01); $("fit").classList.toggle("zoomed",fit.zoomT>1.01);
+  $("fitHint").textContent=fit.zoomT>1.01?"ドラッグで移動 · ダブルクリックで戻す":(fitF.free?"ドラッグで360°回転 · ダブルクリックで拡大":"ドラッグで傾ける · 大きく振ると裏返る");
+}
+$("zoomIn").addEventListener("click",()=>setZoom(fit.zoomT*1.5));
+$("zoomOut").addEventListener("click",()=>setZoom(fit.zoomT/1.5));
+$("zoomReset").addEventListener("click",()=>setZoom(1));
+$("fitView").addEventListener("wheel",e=>{ if(!fit.on) return; e.preventDefault(); setZoom(fit.zoomT*Math.exp(-e.deltaY*0.0015),e.clientX,e.clientY); },{passive:false});
+$("fitView").addEventListener("dblclick",e=>{ if(!fit.on||e.target.closest(".zoomctl")) return; setZoom(fit.zoomT>1.01?1:2.2,e.clientX,e.clientY); });
+
+function frame(){
+  requestAnimationFrame(frame);
+  const now=performance.now()/1000; const dt=Math.min(now-clock,window.__dtcap||0.3); clock=now;
+  if(!ready) return;
+  resize();
+  const {W,H}=viewport();
+  const view=$("pdpView").hidden?"rack":"pdp";
+  // real-time physics in fixed sub-steps, so slow devices stay in sync instead of going slow-motion
+  const steps=Math.min(24,Math.max(1,Math.ceil(dt*120))), h=dt/steps;
+  for(let s=0;s<steps;s++){ T+=h; stepPhysics(h, view); }
+  const {r}=placeCamera();
+  for(const it of items){
+    const idle=reduce?0:0.006*Math.sin(T*0.7+it.k*1.7);
+    it.g.position.set(it.baseX+it.x,it.drop,it.z);
+    it.g.rotation.set(it.swx,it.rot,it.sw+idle);
+  }
+  if(fit.on){
+    updateSeg();
+    const it=items[fit.k]; it.g.updateMatrixWorld(true); it.g.matrixWorld.decompose(tmpP,tmpQ,tmpS);
+    const tg=fitTarget(fit.k), e=ease(fit.p);
+    eul.set(0,tg.face+fitF.spin,fitF.sw+(reduce?0:0.01*Math.sin(T*0.9))); tgtQ.setFromEuler(eul);
+    // zoom/pan ease towards their targets; scaling is about the garment's centre, not the hook
+    fit.zoom+=(fit.zoomT-fit.zoom)*Math.min(1,dt*10); fit.panX+=(fit.panTX-fit.panX)*Math.min(1,dt*12); fit.panY+=(fit.panTY-fit.panY)*Math.min(1,dt*12);
+    const zc=HOOK_Y-GH/2;
+    tmpZ.set(tg.pos.x+fit.panX, tg.pos.y+zc*(1-fit.zoom)+fit.panY, tg.pos.z);
+    fit.g.position.lerpVectors(tmpP,tmpZ,e);
+    fit.g.scale.setScalar(1+(fit.zoom-1)*e);
+    fit.g.quaternion.slerpQuaternions(tmpQ,tgtQ,Math.min(1,e*1.15));
+    updateSpin(fit.g,fitF.spin);
+    if(fit.closing && fit.p<0.02 && Math.abs(fit.pV)<0.2) finishClose();
+  }
+  render(view,W,H,r);
+}
+function stepPhysics(h, view){
+  if(!drag){ pan+=panV*h; panV*=Math.pow(0.04,h); }
+  for(const it of items){
+    const k=it.k, on=k===hover;
+    const shift=hover<0?0:(k<hover?-0.40:k>hover?0.40:0);
+    const prevX=it.xV;
+    spring(it,"x",shift,70,16,h);
+    // the rest angle is measured from the line to the camera, so every garment on the rail shows the
+    // same amount of front regardless of where it hangs (a fixed world angle looked side-on at the left edge)
+    const toCam=cam.position.z>0.1?Math.atan2(cam.position.x-(it.baseX+it.x),cam.position.z-it.z):0;
+    spring(it,"rot",(on?0:REST)+toCam,58,12,h);
+    spring(it,"z",on?0.2:0,60,14,h);
+    if(T>it.t0) spring(it,"drop",0,40,9,h);
+    const ax=(it.xV-prevX)/h;
+    it.swV+=(-ax*0.004+it.rotV*0.006)*h*60*(reduce?0:1);
+    spring(it,"sw",0,26,1.9,h);
+    it.swxV+=(-it.zV*0.02)*h*60*(reduce?0:1);
+    spring(it,"swx",0,26,2.2,h);
+  }
+  if(fit.on){
+    spring(fit,"p",fit.closing?0:1,fit.closing?60:46,fit.closing?15:13,h);
+    flipStep(fitF,h);
+  }
+  if(view==="pdp" && pdp.g){
+    flipStep(pdpF,h);
+  }
+}
+function render(view,W,H,r){
+  renderer.setScissorTest(false);
+  renderer.setViewport(0,0,W,H);
+  if(view==="rack"){
+    if(fit.on){
+      sizeTargets();
+      renderer.setRenderTarget(rtScene); renderer.clear(); renderer.render(rackScene,cam);
+      const amt=THREE.MathUtils.clamp(fit.p,0,1), rad=1+amt*3.2;
+      blurPass(rtScene,rtA,rad,0); blurPass(rtA,rtB,0,rad); blurPass(rtB,rtA,rad*1.8,0); blurPass(rtA,rtB,0,rad*1.8);
+      renderer.setRenderTarget(null);
+      quad.material=compMat; compMat.uniforms.tex.value=rtB.texture; compMat.uniforms.bg.value.copy(cssColor("--bg")); compMat.uniforms.veil.value=0.22*amt;
+      renderer.render(quadScene,quadCam);
+      renderer.autoClear=false; renderer.clearDepth(); renderer.render(fitScene,cam); renderer.autoClear=true;
+    } else {
+      renderer.setRenderTarget(null);
+      if(r.bottom>-200&&r.top<H+200) renderer.render(rackScene,cam); else renderer.clear();
+    }
+  } else {
+    renderer.setRenderTarget(null); renderer.clear();
+    const m=$("galMain");
+    if(m&&pdp.g){
+      const gr=m.getBoundingClientRect();
+      if(gr.bottom>0&&gr.top<H&&gr.width>10){
+        pdp.g.position.set(0,0,0); pdp.g.rotation.set(0,pdpF.spin,pdpF.sw+(reduce?0:0.008*Math.sin(T*0.9)));
+        updateSpin(pdp.g,pdpF.spin);
+        const asp=gr.width/gr.height, tanH=Math.tan(THREE.MathUtils.degToRad(pdpCam.fov/2));
+        const dist=Math.max(1.55/(2*tanH),1.25/(2*tanH*asp));
+        pdpCam.aspect=asp; pdpCam.position.set(0,-.6,dist); pdpCam.lookAt(0,-.62,0); pdpCam.updateProjectionMatrix();
+        const y=H-gr.bottom;
+        renderer.setViewport(gr.left,y,gr.width,gr.height); renderer.setScissor(gr.left,y,gr.width,gr.height); renderer.setScissorTest(true);
+        renderer.render(pdpScene,pdpCam);
+        renderer.setScissorTest(false);
+      }
+    }
+  }
+}
+
+/* ================= page chrome: lineup, menu, cart ================= */
+/* ---- shop grid with category filter ---- */
+const CAT_JA={"T-shirt":"Tシャツ",Sweat:"スウェット",Outer:"アウター",Jacket:"アウター",Shirt:"シャツ",Knit:"ニット"};
+const catOf=p=>p.cat==="Jacket"?"Outer":p.cat;
+function renderLineup(cat){
+  const list=P.map((p,i)=>({p,i})).filter(x=>!cat||catOf(x.p)===cat);
+  $("lineup").innerHTML=list.map(({p,i})=>`<button class="card" data-i="${i}"><span class="ph"><img src="${img(p,"f")}" alt="" loading="lazy"></span><span class="t">${p.name}<br><span style="color:var(--ink-2);font-weight:400">${p.color}</span></span><span class="p">${yen(p.price)}</span></button>`).join("");
+  $("allCount").textContent=cat?`${list.length} / ${P.length} items · ${CAT_JA[cat]}`:`${P.length} items`;
+  $("chips").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.cat===cat)));
+}
+renderLineup("");
+$("chips").addEventListener("click",e=>{const b=e.target.closest("button[data-cat]"); if(b) renderLineup(b.dataset.cat);});
+$("lineup").addEventListener("click",e=>{const c=e.target.closest(".card"); if(c) showPDP(+c.dataset.i);});
+
+/* ---- lookbook: three looks, each built from two pieces on the rail ---- */
+const LOOKS=[
+  {no:"Look 01",title:"Weekday uniform",text:"白のボックスTにコーチジャケット。平日の移動着を、少しだけきれいに。",a:"tee-white",b:"coach-olive"},
+  {no:"Look 02",title:"Sunday knit",text:"ケーブルカーディガンの下にネイビーのロンT。襟元の濃淡で奥行きを作ります。",a:"cardigan",b:"ls-navy"},
+  {no:"Look 03",title:"Night game",text:"チャコールのパーカーにサーキットジャージを重ねて。黒の階調で遊ぶ一組。",a:"hoodie-char",b:"racing"},
+];
+const byId=id=>P.findIndex(p=>p.id===id);
+$("looks").innerHTML=LOOKS.map(l=>`<button class="look" data-i="${byId(l.a)}"><span class="pic"><span class="no">${l.no}</span><img class="b" src="${pimg(P[byId(l.b)],"f")}" alt=""><img src="${pimg(P[byId(l.a)],"f")}" alt=""></span><span class="cap"><b>${l.title}</b><span>${l.text}</span><span class="mono" style="font-size:11px">${P[byId(l.a)].name} + ${P[byId(l.b)].name}</span></span></button>`).join("");
+$("looks").addEventListener("click",e=>{const c=e.target.closest(".look"); if(c) showPDP(+c.dataset.i);});
+
+/* ---- journal ---- */
+const POSTS=[
+  {d:"2026.10.01",t:"AW26 コレクションについて",x:"今季は11型。型は昨季から変えず、裏毛の目付けと色だけを更新しました。新しく加わったのは、サーキットジャージ1型です。"},
+  {d:"2026.09.12",t:"岡山の縫製工場を訪ねて",x:"デニムの街で、スウェットを縫ってもらっています。袖口のリブを少し長くした理由を、工場の方と話しました。"},
+  {d:"2026.08.20",t:"お直しの話",x:"リブの交換とボタンの付け替えは無償です。3年着たパーカーのフードの紐を交換した例を紹介します。"},
+];
+$("posts").innerHTML=POSTS.map((p,i)=>`<button class="post" data-post="${i}"><span class="d">${p.d}</span><b>${p.t}</b><span>${p.x}</span><span class="more">読む</span></button>`).join("");
+$("posts").addEventListener("click",e=>{const c=e.target.closest(".post"); if(c) showPage("post"+c.dataset.post);});
+
+/* ---- menu: pages + pieces ---- */
+$("menu").innerHTML=`<div class="grp">Pages</div><div class="cols">
+  <button data-go="shop"><span>All pieces</span></button><button data-go="lookbook"><span>Lookbook</span></button>
+  <button data-go="about"><span>About</span></button><button data-go="journal"><span>Journal</span></button>
+  <button data-go="stores"><span>Stores</span></button><button data-page="shipping"><span>配送と返品</span></button></div>
+  <div class="grp">Pieces</div>`+P.map((p,i)=>`<button data-i="${i}"><span>${p.name}</span><span class="p">${yen(p.price)}</span></button>`).join("");
+$("menuBtn").addEventListener("click",()=>{const m=$("menu");m.hidden=!m.hidden;$("menuBtn").setAttribute("aria-expanded",String(!m.hidden));});
+$("menu").addEventListener("click",e=>{const b=e.target.closest("button"); if(!b)return; $("menu").hidden=true; $("menuBtn").setAttribute("aria-expanded","false");
+  if(b.dataset.i) showPDP(+b.dataset.i); else if(b.dataset.go) goTo(b.dataset.go); else if(b.dataset.page) showPage(b.dataset.page);});
+
+/* ---- in-page navigation + info pages ---- */
+function goTo(id){
+  if($("rackView").hidden) showRack();
+  const el=$(id); if(!el) return;
+  requestAnimationFrame(()=>{ const y=el.getBoundingClientRect().top+window.scrollY-72; window.scrollTo(0,y); });
+}
+document.addEventListener("click",e=>{
+  const a=e.target.closest("[data-go],[data-page],[data-cat]"); if(!a||a.closest("#menu")||a.closest("#chips")) return;
+  e.preventDefault();
+  if(a.dataset.go) goTo(a.dataset.go);
+  else if(a.dataset.page) showPage(a.dataset.page);
+  else if(a.dataset.cat){ renderLineup(a.dataset.cat); goTo("shop"); }
+});
+const PAGES={
+  shipping:{t:"配送と返品",s:"Shipping & returns",h:`<h3>配送</h3><p>ご注文から2〜4営業日で出荷します。11,000円（税込）以上で送料無料、それ未満は全国一律660円です。配送はヤマト運輸、日時指定ができます。</p><h3>返品・交換</h3><p>商品到着後14日以内、未使用・タグ付きの商品に限りお受けします。サイズ交換の往復送料は当店負担です。セール品、お直し後の商品は対象外です。</p><h3>手順</h3><ul><li>お問い合わせフォームから注文番号と理由をお知らせください。</li><li>返送用の伝票をメールでお送りします。</li><li>商品の到着確認後、5営業日以内に返金します。</li></ul>`},
+  size:{t:"サイズガイド",s:"Size guide",h:`<p>すべて平置きの実寸（cm）です。各商品ページの「サイズ表」にも同じ数値を載せています。迷ったときは、手持ちの服を平置きで測って比べてください。</p><h3>Tシャツ・シャツ</h3><table><thead><tr><th>サイズ</th><th>着丈</th><th>身幅</th><th>袖丈</th></tr></thead><tbody>${SIZE_TEE.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join("")}</tbody></table><h3>スウェット・ニット</h3><table><thead><tr><th>サイズ</th><th>着丈</th><th>身幅</th><th>袖丈（肩から）</th></tr></thead><tbody>${SIZE_SWT.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join("")}</tbody></table><h3>アウター</h3><table><thead><tr><th>サイズ</th><th>着丈</th><th>身幅</th><th>袖丈（肩から）</th></tr></thead><tbody>${SIZE_JKT.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join("")}</tbody></table><h3>目安</h3><p>モデル（身長178cm・体重66kg）は、Tシャツ・スウェットは M、アウターは L を着用しています。ゆったり着たい場合はワンサイズ上をおすすめします。</p>`},
+  repair:{t:"お直しについて",s:"Repair",h:`<p>KIRIGO の服は、直して着ることを前提に作っています。購入時期を問わず、以下をお受けします。</p><h3>無償</h3><ul><li>袖口・裾リブの交換</li><li>ボタンの付け替え</li><li>フード紐・ドローコードの交換</li></ul><h3>実費</h3><ul><li>穴あき・ほつれの補修（1か所 1,100円〜）</li><li>ファスナー交換（3,300円〜）</li><li>丈詰め（2,200円〜）</li></ul><p>神宮前の店舗に直接お持ちいただくか、お問い合わせフォームから写真を添えてご連絡ください。お預かり期間は2〜4週間です。</p>`},
+  contact:{t:"お問い合わせ",s:"Contact",h:`<p>商品・注文・お直しについてのご質問は、こちらから。2営業日以内に返信します（デモサイトのため、実際には送信されません）。</p><form class="form" id="contactForm"><label>お名前<input type="text" required></label><label>メールアドレス<input type="email" required></label><label>件名<select><option>商品について</option><option>注文について</option><option>お直しについて</option><option>その他</option></select></label><label>内容<textarea required></textarea></label><button class="btn" type="submit">送信する</button></form>`},
+  company:{t:"会社概要",s:"Company",h:`<table><tbody><tr><th>ブランド名</th><td>KIRIGO（キリゴ）</td></tr><tr><th>運営</th><td>株式会社キリゴ（架空）</td></tr><tr><th>設立</th><td>2024年4月</td></tr><tr><th>所在地</th><td>東京都渋谷区神宮前 5-XX-X</td></tr><tr><th>事業内容</th><td>衣料品の企画・製造・販売</td></tr><tr><th>縫製</th><td>和歌山県・岡山県の協力工場</td></tr></tbody></table><p style="margin-top:24px">このページを含め、KIRIGO はWeb制作のデモ用に作られた架空のブランドです。実在の企業・店舗・商品とは関係ありません。</p>`},
+  terms:{t:"利用規約",s:"Terms",h:`<p>本サイトはデモ用のサンプルです。掲載されている商品・価格・在庫・店舗情報はすべて架空のもので、実際の売買契約は成立しません。カート機能は表示の確認用で、決済画面には進みません。</p><p>サイト内の画像・文章の無断転載はご遠慮ください。</p>`},
+  privacy:{t:"プライバシーポリシー",s:"Privacy",h:`<p>本サイトでは、お問い合わせフォームやニュースレター登録で入力された情報を、サーバーに送信・保存しません。入力内容はブラウザ内でのみ扱われ、ページを閉じると消去されます。</p><p>アクセス解析やCookieによる追跡も行っていません。</p>`},
+  law:{t:"特定商取引法に基づく表記",s:"Legal notice",h:`<table><tbody><tr><th>販売業者</th><td>株式会社キリゴ（架空）</td></tr><tr><th>所在地</th><td>東京都渋谷区神宮前 5-XX-X</td></tr><tr><th>販売価格</th><td>各商品ページに表示（税込）</td></tr><tr><th>送料</th><td>全国一律660円 / 11,000円以上無料</td></tr><tr><th>支払方法</th><td>クレジットカード、コンビニ払い（デモのため利用不可）</td></tr><tr><th>引渡し時期</th><td>ご注文から2〜4営業日で出荷</td></tr><tr><th>返品</th><td>到着後14日以内・未使用品に限る</td></tr></tbody></table>`},
+};
+POSTS.forEach((p,i)=>{ PAGES["post"+i]={t:p.t,s:p.d+" · Journal",h:`<p>${p.x}</p><p>（デモ用の記事です。本文は省略しています。）</p>`}; });
+function showPage(key){
+  const pg=PAGES[key]; if(!pg) return;
+  if(pdp.g){ pdpScene.remove(pdp.g); pdp.g=null; }
+  $("rackView").hidden=true; $("pdpView").hidden=true; setHover(-1);
+  $("pageView").innerHTML=`<div class="page"><button class="back mono" id="pageBack">← Back</button><h2>${pg.t}</h2><div class="sub mono">${pg.s}</div>${pg.h}</div>`;
+  $("pageView").hidden=false; window.scrollTo(0,0);
+  $("pageBack").addEventListener("click",showRack);
+  const f=$("contactForm"); if(f) f.addEventListener("submit",e=>{ e.preventDefault(); note("送信しました（デモのため実際には送られません）"); f.reset(); });
+}
+function note(msg){ $("toastMsg").textContent=msg; const t=$("toast"); t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),4200); }
+$("newsForm").addEventListener("submit",e=>{ e.preventDefault(); note("登録しました（デモのため実際には送られません）"); e.target.reset(); });
+document.addEventListener("click",e=>{ if(!$("menu").hidden && !e.target.closest("#menu,#menuBtn")){ $("menu").hidden=true; $("menuBtn").setAttribute("aria-expanded","false"); }});
+$("home").addEventListener("click",showRack);
+
+const cart=[];
+function addToCart(i,size,qty){
+  const hit=cart.find(c=>c.i===i&&c.size===size);
+  if(hit) hit.qty=Math.min(9,hit.qty+qty); else cart.push({i,size,qty});
+  renderCart();
+  const cb=$("cartBtn"); cb.classList.remove("bump"); void cb.offsetWidth; cb.classList.add("bump");
+  $("toastMsg").textContent=`${P[i].name}（${size}）× ${qty} をカートに追加しました`;
+  const t=$("toast"); t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),4200);
+}
+function renderCart(){
+  $("count").textContent=cart.reduce((a,c)=>a+c.qty,0);
+  $("subtotal").textContent=yen(cart.reduce((a,c)=>a+c.qty*P[c.i].price,0));
+  $("lines").innerHTML=cart.length?cart.map((c,k)=>{const p=P[c.i];return `<div class="line"><span class="ph"><img src="${img(p,"f")}" alt=""></span><div><div class="t">${p.name}</div><div class="m">${p.color} · ${c.size} · × ${c.qty}</div><button class="rm" data-k="${k}">削除</button></div><span class="mono">${yen(p.price*c.qty)}</span></div>`}).join(""):`<div class="empty">カートは空です。<br>ラックから服を選んでください。</div>`;
+}
+$("lines").addEventListener("click",e=>{const b=e.target.closest(".rm"); if(!b)return; cart.splice(+b.dataset.k,1); renderCart();});
+function openCart(){ $("scrim").hidden=false; const d=$("drawer"); d.setAttribute("aria-hidden","false"); requestAnimationFrame(()=>d.classList.add("show")); $("toast").classList.remove("show"); $("drawerClose").focus({preventScroll:true}); }
+function closeCart(){ const d=$("drawer"); d.classList.remove("show"); d.setAttribute("aria-hidden","true"); setTimeout(()=>$("scrim").hidden=true,350); }
+$("cartBtn").addEventListener("click",openCart); $("toastCart").addEventListener("click",openCart);
+$("drawerClose").addEventListener("click",closeCart); $("scrim").addEventListener("click",closeCart);
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"){ if($("drawer").classList.contains("show")) closeCart(); else closeFit(); }
+  if(fit.on&&!fit.closing&&(e.key==="ArrowLeft"||e.key==="ArrowRight")) flipDir(fitF,e.key==="ArrowRight"?1:-1);
+});
+renderCart();
+setHover(-1);
+
+/* ================= boot ================= */
+if(!renderer){
+  $("loadMsg").textContent="この端末では3D表示に対応していません。下の一覧から商品を選べます。"; $("loadBar").parentElement.hidden=true;
+} else {
+  setupScenes(); setupBlur();
+  loadAll().then(()=>{ ready=true; $("loader").hidden=true; window.__ready=true; if(USE_NH) setTimeout(preloadNH,600);  }).catch(err=>{ console.error(err); $("loadMsg").textContent="画像を読み込めませんでした。ページを再読み込みしてください。"; });
+  requestAnimationFrame(frame);
+}
+</script>
+
+</body>
+</html>

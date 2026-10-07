@@ -13,6 +13,7 @@
     { "id": "08", "name": "Aethera", "url": "https://growx-inc.github.io/portfolio/08/", "keywords": ["造園", "不動産"], "any": false, "highlight": "動画の背景で、空間の広がりを感じていただける構成をご覧いただけます", "usable": true },
     { "id": "09", "name": "羊3DモデルLP", "url": "https://growx-inc.github.io/portfolio/09/", "keywords": ["製造", "商品"], "any": false, "highlight": "立体の商品が、画面の動きに合わせて回転する演出をご覧いただけます", "usable": true },
     { "id": "10", "name": "露葉 ボタニカルローションLP", "url": "https://growx-inc.github.io/portfolio/10/", "keywords": ["化粧品"], "any": false, "highlight": "", "usable": false, "unusableReason": "除外業種（美容・化粧品）と重なる" },
+    { "id": "11", "name": "KIRIGO（3DハンガーラックECデモ）", "url": "https://growx-inc.github.io/portfolio/11/", "keywords": ["アパレル", "ファッション", "衣料", "EC"], "any": false, "highlight": "ハンガーラックに掛かった服が立体で並び、1着ずつ360°回して細部まで見られる演出をご覧いただけます", "usable": true },
     { "id": "mymonsters", "name": "MY MONSTERS", "url": "https://www.growx.co.jp/mymonsters/", "keywords": [], "any": true, "highlight": "スクロールに合わせて動く演出をご覧いただけます", "usable": true }
   ]
 }
